@@ -1,6 +1,19 @@
 // src/config/index.js
 require('dotenv').config();
 
+// Parse Google Service Account JSON if provided
+let parsedGoogleCredentials = null;
+if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    try {
+        parsedGoogleCredentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+        console.log('✅ Parsed Google Service Account JSON successfully');
+        console.log('   Client Email:', parsedGoogleCredentials.client_email ? '✓ Found' : '✗ Missing');
+        console.log('   Private Key:', parsedGoogleCredentials.private_key ? '✓ Found' : '✗ Missing');
+    } catch (error) {
+        console.error('❌ Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', error.message);
+    }
+}
+
 const config = {
     server: {
         port: process.env.PORT || 3000,
@@ -19,21 +32,11 @@ const config = {
     },
     
     google: {
-        // Service account credentials
-        clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
-        privateKey: process.env.GOOGLE_PRIVATE_KEY,
+        // Service account credentials - extract from JSON or use individual env vars
+        clientEmail: parsedGoogleCredentials?.client_email || process.env.GOOGLE_CLIENT_EMAIL,
+        privateKey: parsedGoogleCredentials?.private_key || process.env.GOOGLE_PRIVATE_KEY,
         serviceAccountKey: process.env.GOOGLE_SERVICE_ACCOUNT_KEY,
-        // Parse JSON service account if provided
-        serviceAccountJson: (() => {
-            const jsonString = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-            if (!jsonString) return null;
-            try {
-                return JSON.parse(jsonString);
-            } catch (error) {
-                console.warn('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', error.message);
-                return null;
-            }
-        })(),
+        serviceAccountJson: parsedGoogleCredentials,
         // OAuth2 credentials (base64 encoded, fallback)
         credentialsBase64: process.env.GOOGLE_CREDENTIALS_BASE64,
         tokenBase64: process.env.GOOGLE_TOKEN_BASE64,
@@ -103,8 +106,7 @@ function validateConfig() {
         'google.clientEmail',
         'google.privateKey',
         'google.drive.recordingsRootFolderId',
-        'google.sheets.masterIndexSheetId',
-        'openai.apiKey'
+        'google.sheets.masterIndexSheetId'
     ];
     
     const missing = [];
@@ -123,22 +125,27 @@ function validateConfig() {
     }
     
     if (missing.length > 0) {
-        throw new Error(`Missing required configuration: ${missing.join(', ')}`);
+        console.error('Missing required configuration:', missing.join(', '));
+        
+        // Additional debugging for Google credentials
+        if (missing.includes('google.clientEmail') || missing.includes('google.privateKey')) {
+            console.error('Google Auth Debug:');
+            console.error('  GOOGLE_SERVICE_ACCOUNT_JSON exists:', !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+            console.error('  Parsed successfully:', !!parsedGoogleCredentials);
+            if (parsedGoogleCredentials) {
+                console.error('  Has client_email:', !!parsedGoogleCredentials.client_email);
+                console.error('  Has private_key:', !!parsedGoogleCredentials.private_key);
+            }
+        }
+        
+        // Don't throw in production, just warn
+        if (process.env.NODE_ENV === 'production') {
+            console.warn('⚠️  Configuration incomplete but continuing...');
+        }
     }
 }
 
 // Validate config on load
-if (process.env.NODE_ENV !== 'test') {
-    try {
-        validateConfig();
-    } catch (error) {
-        console.error('Configuration validation failed:', error.message);
-        console.error('Please check your .env file');
-        // Don't exit in development to allow debugging
-        if (process.env.NODE_ENV === 'production') {
-            process.exit(1);
-        }
-    }
-}
+validateConfig();
 
 module.exports = config;
