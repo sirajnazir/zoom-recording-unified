@@ -163,6 +163,15 @@ class DualTabGoogleSheetsService {
     
     async _initialize() {
         try {
+            // Debug logging
+            console.log('\n🔍 DEBUG: DualTabGoogleSheetsService Config Check');
+            console.log('================================================');
+            console.log('this.config exists:', !!this.config);
+            console.log('this.config.google exists:', !!this.config.google);
+            console.log('this.config.google.clientEmail:', this.config.google?.clientEmail || 'UNDEFINED');
+            console.log('this.config.google.privateKey exists:', !!this.config.google?.privateKey);
+            console.log('================================================\n');
+            
             // Initialize Google Auth
             if (!this.config.google.clientEmail || !this.config.google.privateKey) {
                 throw new Error('Missing Google credentials');

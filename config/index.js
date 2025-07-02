@@ -145,6 +145,19 @@ function validateConfig() {
     }
 }
 
+// Debug logging before export
+console.log('\n🔍 DEBUG: Config Google Credentials Before Export');
+console.log('================================================');
+console.log('config.google.clientEmail:', config.google.clientEmail ? '✓ Set' : '✗ Not set');
+console.log('config.google.privateKey:', config.google.privateKey ? '✓ Set' : '✗ Not set');
+if (config.google.clientEmail) {
+    console.log('clientEmail value:', config.google.clientEmail);
+}
+if (config.google.privateKey) {
+    console.log('privateKey length:', config.google.privateKey.length);
+}
+console.log('================================================\n');
+
 // Validate config on load
 validateConfig();
 
