@@ -113,6 +113,24 @@ app.get('/health', async (req, res) => {
     res.json(health);
 });
 
+// Test webhook endpoint (bypasses validation)
+app.post('/webhook-test', async (req, res) => {
+    const { event, payload } = req.body;
+    
+    console.log(`📨 TEST Webhook received: ${event}`);
+    console.log('⚠️  This is a TEST endpoint - no signature validation');
+    
+    // Immediately acknowledge the webhook
+    res.status(200).json({ message: 'Test webhook received' });
+    
+    // Process recording.completed events
+    if (event === 'recording.completed') {
+        processRecordingCompleted(req.body).catch(error => {
+            console.error('Error processing recording.completed:', error);
+        });
+    }
+});
+
 // Webhook endpoint for recording.completed events
 app.post('/webhook', validateWebhook, async (req, res) => {
     const { event, payload } = req.body;
@@ -261,6 +279,7 @@ app.listen(PORT, async () => {
     
     console.log(`\n✅ Webhook server is ready!`);
     console.log(`📍 Webhook URL: http://localhost:${PORT}/webhook`);
+    console.log(`🧪 Test Webhook URL: http://localhost:${PORT}/webhook-test (no validation)`);
     console.log(`📊 Health Check: http://localhost:${PORT}/health`);
     console.log(`📋 Queue Status: http://localhost:${PORT}/queue-status\n`);
 });
