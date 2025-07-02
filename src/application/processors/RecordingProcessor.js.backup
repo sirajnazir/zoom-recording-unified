@@ -1,0 +1,326 @@
+const path = require('path');
+const fs = require('fs').promises;
+
+class RecordingProcessor {
+    constructor(
+        logger,
+        recordingAnalyzer,
+        googleDriveService,
+        googleSheetsService,
+        zoomService,
+        eventBus
+    ) {
+        // Ensure logger has required methods
+        this.logger = this._ensureLogger(logger);
+        this.recordingAnalyzer = recordingAnalyzer;
+        this.googleDriveService = googleDriveService;
+        this.googleSheetsService = googleSheetsService;
+        this.zoomService = zoomService;
+        this.eventBus = eventBus;
+        this.processingCache = new Map();
+    }
+
+    _ensureLogger(logger) {
+        // If logger is already properly structured, return it
+        if (logger && typeof logger.info === 'function' && typeof logger.error === 'function') {
+            return logger;
+        }
+
+        // Create a console-based fallback logger
+        const fallbackLogger = {
+            info: (message, meta = {}) => {
+                console.log(`info: ${message}`, JSON.stringify(meta));
+            },
+            error: (message, meta = {}) => {
+                console.error(`error: ${message}`, JSON.stringify(meta));
+            },
+            warn: (message, meta = {}) => {
+                console.warn(`warn: ${message}`, JSON.stringify(meta));
+            },
+            debug: (message, meta = {}) => {
+                console.log(`debug: ${message}`, JSON.stringify(meta));
+            }
+        };
+
+        // If logger exists but doesn't have the right methods, wrap it
+        if (logger && (logger.log || logger.write)) {
+            return {
+                info: (msg, meta) => logger.log ? logger.log('info', msg, meta) : fallbackLogger.info(msg, meta),
+                error: (msg, meta) => logger.log ? logger.log('error', msg, meta) : fallbackLogger.error(msg, meta),
+                warn: (msg, meta) => logger.log ? logger.log('warn', msg, meta) : fallbackLogger.warn(msg, meta),
+                debug: (msg, meta) => logger.log ? logger.log('debug', msg, meta) : fallbackLogger.debug(msg, meta)
+            };
+        }
+
+        // Return fallback logger
+        return fallbackLogger;
+    }
+
+    async processRecording(recording) {
+        const processingId = `proc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        try {
+            this.logger.info('Starting recording processing', {
+                recordingId: recording.id,
+                topic: recording.topic,
+                uuid: recording.uuid,
+                processingId,
+                useContentFirst: recording.useContentFirst || false
+            });
+
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('recording:processing:start', {
+                    recordingId: recording.id,
+                    processingId
+                });
+            }
+
+            // Get participants
+            const participants = await this._getParticipants(recording.uuid);
+            
+            // Analyze recording
+            const analysis = await this._analyzeRecording(recording, participants, processingId);
+            
+            // Process results
+            const result = await this._processAnalysisResults(recording, analysis, processingId);
+            
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('recording:processing:complete', {
+                    recordingId: recording.id,
+                    processingId,
+                    result
+                });
+            }
+
+            return result;
+
+        } catch (error) {
+            this.logger.error('Recording processing failed', {
+                error: error.message,
+                stack: error.stack,
+                recordingId: recording.id,
+                processingId
+            });
+
+            if (this.eventBus && typeof this.eventBus.emit === 'function') {
+                this.eventBus.emit('recording:processing:error', {
+                    recordingId: recording.id,
+                    processingId,
+                    error: error.message
+                });
+            }
+
+            throw error;
+        }
+    }
+
+    async _getParticipants(uuid) {
+        try {
+            if (!this.zoomService || typeof this.zoomService.getParticipants !== 'function') {
+                this.logger.warn('ZoomService not available or missing getParticipants method', { uuid });
+                return [];
+            }
+            
+            const participants = await this.zoomService.getParticipants(uuid);
+            return participants || [];
+        } catch (error) {
+            this.logger.warn('Failed to get participants', {
+                uuid,
+                error: error.message
+            });
+            return [];
+        }
+    }
+
+    async _analyzeRecording(recording, participants, processingId) {
+        // Robust analyzer check
+        let analyzer = this.recordingAnalyzer;
+        
+        // If no analyzer, try to get it from global context or create mock
+        if (!analyzer || typeof analyzer.analyzeRecording !== 'function') {
+            this.logger.warn('RecordingAnalyzer not available, using fallback', {
+                processingId,
+                recordingId: recording.id,
+                hasAnalyzer: !!analyzer,
+                analyzerType: typeof analyzer
+            });
+            
+            // Create a basic analysis based on topic
+            const topicLower = (recording.topic || '').toLowerCase();
+            let sessionType = 'Unknown';
+            let confidence = 0;
+            let studentName = '';
+            let coachName = '';
+            let weekNumber = null;
+            
+            // Basic pattern matching
+            if (topicLower.includes('week') && topicLower.match(/weeks*(d+)/)) {
+                const weekMatch = topicLower.match(/weeks*(d+)/);
+                weekNumber = parseInt(weekMatch[1]);
+                sessionType = 'IvyLevel Session';
+                confidence = 60;
+            }
+            
+            // Extract names from topic
+            const namePattern = /([A-Z][a-z]+)s*(&|and)?s*([A-Z][a-z]+)?/;
+            const nameMatch = recording.topic.match(namePattern);
+            if (nameMatch) {
+                if (nameMatch[3]) {
+                    // Two names found - determine student vs coach
+                    studentName = nameMatch[1];
+                    coachName = nameMatch[3];
+                } else {
+                    studentName = nameMatch[1];
+                }
+                confidence = Math.max(confidence, 50);
+            }
+            
+            if (topicLower.includes('interview')) {
+                sessionType = 'Interview Prep';
+                confidence = 70;
+            } else if (topicLower.includes('essay') || topicLower.includes('writing')) {
+                sessionType = 'Essay Review';
+                confidence = 65;
+            } else if (topicLower.includes('ivy level')) {
+                sessionType = 'IvyLevel Session';
+                confidence = 75;
+            }
+            
+            return {
+                sessionType,
+                confidence,
+                metadata: {
+                    recordingId: recording.id,
+                    topic: recording.topic,
+                    studentName,
+                    coachName,
+                    weekNumber,
+                    participants: participants.length,
+                    analyzedAt: new Date().toISOString(),
+                    method: 'fallback'
+                }
+            };
+        }
+
+        try {
+            const analysis = await analyzer.analyzeRecording({
+                recording,
+                participants,
+                processingId
+            });
+
+            return analysis || {
+                sessionType: 'Unknown',
+                confidence: 0,
+                metadata: {}
+            };
+        } catch (error) {
+            this.logger.error('Analysis failed', {
+                processingId,
+                recordingId: recording.id,
+                error: error.message
+            });
+            
+            return {
+                sessionType: 'Unknown',
+                confidence: 0,
+                metadata: {
+                    error: error.message
+                }
+            };
+        }
+    }
+
+    async _processAnalysisResults(recording, analysis, processingId) {
+        const result = {
+            recordingId: recording.id,
+            processingId,
+            topic: recording.topic,
+            startTime: recording.start_time,
+            duration: recording.duration,
+            analysis,
+            processedAt: new Date().toISOString()
+        };
+
+        // Save to Google Sheets if enabled
+        if (process.env.SAVE_TO_SHEETS === 'true' && this.googleSheetsService) {
+            try {
+                const sheetRow = await this._saveToGoogleSheets(result);
+                result.sheetRow = sheetRow;
+            } catch (error) {
+                this.logger.error('Failed to save to Google Sheets', {
+                    processingId,
+                    error: error.message
+                });
+            }
+        }
+
+        // Save to local file
+        if (process.env.OUTPUT_DIR) {
+            try {
+                const filePath = await this._saveToFile(result);
+                result.filePath = filePath;
+            } catch (error) {
+                this.logger.error('Failed to save to file', {
+                    processingId,
+                    error: error.message
+                });
+            }
+        }
+
+        return result;
+    }
+
+    async _saveToGoogleSheets(result) {
+        if (!this.googleSheetsService || typeof this.googleSheetsService.appendRow !== 'function') {
+            this.logger.warn('GoogleSheetsService not available or missing appendRow method');
+            return null;
+        }
+        
+        try {
+            if (!this.googleSheetsService || typeof this.googleSheetsService.appendRow !== 'function') {
+                this.logger.warn('GoogleSheetsService not properly configured');
+                return null;
+            }
+
+            const rowData = {
+                recordingId: result.recordingId,
+                topic: result.topic,
+                startTime: result.startTime,
+                duration: result.duration,
+                sessionType: result.analysis?.sessionType || 'Unknown',
+                studentName: result.analysis?.metadata?.studentName || '',
+                coachName: result.analysis?.metadata?.coachName || '',
+                weekNumber: result.analysis?.metadata?.weekNumber || '',
+                confidence: result.analysis?.confidence || 0,
+                processedAt: result.processedAt
+            };
+
+            return await this.googleSheetsService.appendRow('ProcessedRecordings', rowData);
+        } catch (error) {
+            this.logger.error('Failed to save to Google Sheets', {
+                recordingId: result.recordingId,
+                error: error.message
+            });
+            return null;
+        }
+    }
+
+    async _saveToFile(result) {
+        const outputDir = process.env.OUTPUT_DIR || './output';
+        const fileName = `recording-${result.recordingId}-${result.processingId}.json`;
+        const filePath = path.join(outputDir, fileName);
+
+        // Ensure output directory exists
+        try {
+            await fs.mkdir(outputDir, { recursive: true });
+        } catch (error) {
+            // Directory might already exist
+        }
+
+        await fs.writeFile(filePath, JSON.stringify(result, null, 2));
+        return filePath;
+    }
+}
+
+module.exports = RecordingProcessor;

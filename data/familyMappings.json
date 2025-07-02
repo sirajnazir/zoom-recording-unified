@@ -1,0 +1,33 @@
+{
+  "families": {
+    "shah": {
+      "student": "Aaryan Shah",
+      "alternateNames": ["leena shah", "shah family", "mrs. shah", "mr. shah"],
+      "parentEmails": ["leenashah@gmail.com", "shahfamily@gmail.com"]
+    },
+    "patel": {
+      "student": "Priya Patel",
+      "alternateNames": ["mrs. patel", "mr. patel", "patel family"],
+      "parentEmails": ["patelfamily@gmail.com"]
+    },
+    "khan": {
+      "student": "Aisha Khan",
+      "alternateNames": ["khan family", "mrs. khan", "mr. khan"],
+      "parentEmails": ["khanfamily@gmail.com"]
+    },
+    "gupta": {
+      "student": "Arjun Gupta",
+      "alternateNames": ["gupta family", "mrs. gupta", "mr. gupta"],
+      "parentEmails": ["guptafamily@gmail.com"]
+    },
+    "singh": {
+      "student": "Simran Singh",
+      "alternateNames": ["singh family", "mrs. singh", "mr. singh"],
+      "parentEmails": ["singhfamily@gmail.com"]
+    }
+  },
+  "mappingRules": {
+    "parentKeywords": ["mom", "dad", "parent", "family", "mother", "father"],
+    "excludeFromStudentList": ["@ivymentors.co", "admin", "ivylevel", "staff"]
+  }
+} 

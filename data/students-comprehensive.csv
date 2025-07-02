@@ -1,0 +1,36 @@
+student_id,name,first_name,last_name,email,alternate_names,parent_name,parent_email,parent_alternate_names,grade,program,coach,status,start_date,interests,target_colleges,target_sat,notes
+kavya_001,Kavya Venkatesan,Kavya,Venkatesan,kavyamridula@gmail.com,Kavya|Kavyamridula|K. Venkatesan,Srihari Venkatesan,harisuthan@yahoo.com,Srihari Venkatesan,11,Ultimate Prep & Apps Program (48x 1hr/week),Aditi,active,2024-06-24,,,,
+aarav_001,Aarav,Aarav,,,Aarav,,,,11,,Rishi,active,,,,,
+aaryan_001,Aaryan Shah,Aaryan,Shah,,Aaryan|Aaryan Shah|Shah|A. Shah,Leena Shah,leena.shah@gmail.com,Leena|Leena Shah,11,,Rishi,active,,,,,
+aarnav_001,Aarnav Agrawal,Aarnav,Agrawal,,Aarnav|A. Agrawal,Shishir Agrawal,shishir2004@gmail.com,Shishir Agrawal,11,,Rishi,active,,,,,"Debate activities, APs preparation"
+iqra_001,Iqra,Iqra,,,Iqra,,,,11,,,active,,,,,
+srinidhi_001,Srinidhi Raghavan,Srinidhi,Raghavan,srinidhi.sr8@gmail.com,Srinidhi|S. Raghavan|Srinidhi SR,Sampath and Lakshmi Raghavan,sraghavanfamily@gmail.com,Sampath and Lakshmi Raghavan,12,Data Science Research Program,Erin,active,,Data Science|Research|AI/ML,,,"Rising senior, interested in Stanford research opportunities"
+huda_001,Huda,Huda,,,Huda,,,,12,Essay Program,Jenny,active,,,USC|Stanford|UC Schools,,Working on UC essays and Stanford supplementals
+anoushka_001,Anoushka,Anoushka,,,Anoushka,,,,11,,Kelvin,active,,,,,Working with coach Kelvin
+advay_001,Advay,Advay,,,Advay,,,,11,,,active,,,,,
+abhi_001,Abhi,Abhi,,,Abhi|Abhishek,,,,11,,,active,,,,,
+victoria_001,Victoria,Victoria,,,Victoria|Vicky,,,,11,,,active,,,,,
+zainab_001,Zainab,Zainab,,,Zainab,,,,11,,,active,,,,,
+kabir_001,Kabir,Kabir,,,Kabir,,,,11,,,active,,,,,
+arshiya_001,Arshiya,Arshiya,,,Arshiya,,,,11,Ivylevel Program,Jenny,active,,,,,"Sessions with Jenny, Week 16+ progress"
+ananyaa_001,Ananyaa Srivastava,Ananyaa,Srivastava,ananyaa.srivastava1@gmail.com,Ananyaa|Ananya|A. Srivastava,Tanvi and Amit Srivastava,"thatstanvi@gmail.com, srivastava.amit1@gmail.com",Tanvi and Amit Srivastava,11,Ivy Level Program,Juli,active,,AI|Biology|Environment|Competitive Programming|USACO|AIME,,1570+,"Week 14+ sessions, working on AI+Bio/Environment research projects, Girls Who Code participant"
+rayaan_001,Rayaan,Rayaan,,,Rayaan,,,,11,,"Alice, Andrew, Alan",active,,,,,"Multiple coaches - works with Alice, Andrew, and Alan"
+minseo_001,Minseo,Minseo,,,Minseo|Min Seo,,,,11,,Jenny,active,,,,,
+ananya_001,Ananya,Ananya,,,Ananya,,,,11,,,active,,,,,Different from Ananyaa Srivastava
+sachit_001,Sachit,Sachit,,,Sachit,,,,11,Ivylevel Prep Basic Plan,Jenny,active,,,,,Week #2 sessions with Jenny
+soham_001,Soham,Soham,,,Soham,,,,11,College Prep,Summer,active,,,,,Week #1 60 min sessions
+andrea_001,Andrea,Andrea,,,Andrea,,,,11,360 Assessment,Erin,active,,,,,360 Assessment program
+arushi_001,Arushi Gupta,Arushi,Gupta,,Arushi|A. Gupta,,,,11,Transfer App Custom Program,Jenny,active,,,,,"Multiple sessions, UPenn application"
+beya_001,Beya,Beya,,,Beya|Hiba Shaikh,,,,11,24 Week Program,Noor,active,,,,,Week 3-4 sessions with Noor
+netra_001,Netra Dsouza,Netra,Dsouza,,Netra|N. Dsouza,,,,11,Game Plan Prep,Jenny,active,,,,,1-1 Prep Game Plan sessions
+shashank_001,Shashank,Shashank,,,Shashank,,,,11,Game Plan,Jenny,active,,,,,1-1 Game Plan sessions
+anshika_001,Anshika,Anshika,,,Anshika,,,,11,Game Plan Prep,Jenny,active,,,,,"1-1 App Review AI4ALL, Game Plan sessions"
+sameeha_001,Sameeha,Sameeha,,,Sameeha,,,,11,Internship & Career Prep,Jenny,active,,,,,Week 1-2 Internship & Career Prep
+sahida_001,Sahida Kureshi,Sahida,Kureshi,,Sahida|S. Kureshi,,,,11,App Gameplan,Jenny,active,,,,,1-1 App Gameplan sessions
+ishaan_001,Ishaan Taj,Ishaan,Taj,,Ishaan|I. Taj,,,,11,Essay Elevate,,active,,,,,Essay Elevate sessions
+danait_001,Danait,Danait,,,Danait,,,,11,,,active,,,,,Ivy Mentors sessions
+hiba_001,Hiba,Hiba,,,Hiba,,,,11,24x Week Prep Program,Jenny,active,,,,,Game Plan Week #1
+minseo_kim_001,Minseo Kim,Minseo,Kim,,Minseo|M. Kim,,,,11,Essay Elevator,Jenny,active,,,,,Essay Elevator 9 Week Program
+anila_001,Anila,Anila,,,Anila,,,,11,,Jamie,active,,,,,Personal Meeting Room sessions
+anoushka_chakravarty_001,Anoushka Chakravarty,Anoushka,Chakravarty,,Anoushka|A. Chakravarty,,,,11,12-Week Comprehensive App,Jenny,active,,,,,12-Week Program sessions
+vihana_001,Vihana Venkatesan,Vihana,Venkatesan,,Vihana|V. Venkatesan,,,,5,Game Plan,Jenny,active,,,,,1-1 Game Plan sessions

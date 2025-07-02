@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: zoom-recording-webhook
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: node webhook-server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
