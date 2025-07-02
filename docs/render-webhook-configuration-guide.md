@@ -59,7 +59,7 @@ PROCESSING_TIMEOUT=300000
 
 ### 6. Optional but Recommended
 ```
-OPENAI_API_KEY=***REMOVED***
+OPENAI_API_KEY=<your-openai-api-key-here>
 ANALYZE_CONTENT=false
 GENERATE_INSIGHTS=false
 ```
