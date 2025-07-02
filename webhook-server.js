@@ -6,6 +6,35 @@
  */
 
 require('dotenv').config();
+
+// Debug Google Authentication
+console.log('\n🔍 DEBUG: Google Authentication Environment Check');
+console.log('================================================');
+const hasServiceAccountJson = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+console.log('GOOGLE_SERVICE_ACCOUNT_JSON exists:', hasServiceAccountJson);
+if (hasServiceAccountJson) {
+    const jsonPreview = process.env.GOOGLE_SERVICE_ACCOUNT_JSON.substring(0, 100);
+    console.log('JSON Preview (first 100 chars):', jsonPreview + '...');
+    try {
+        const parsed = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+        console.log('✅ JSON parses successfully');
+        console.log('Has client_email:', !!parsed.client_email);
+        console.log('Has private_key:', !!parsed.private_key);
+        console.log('client_email value:', parsed.client_email || 'MISSING');
+    } catch (error) {
+        console.log('❌ JSON parse error:', error.message);
+    }
+}
+console.log('Drive Folder IDs:', {
+    root: process.env.RECORDINGS_ROOT_FOLDER_ID ? '✓' : '✗',
+    coaches: process.env.COACHES_FOLDER_ID ? '✓' : '✗',
+    students: process.env.STUDENTS_FOLDER_ID ? '✓' : '✗',
+    misc: process.env.MISC_FOLDER_ID ? '✓' : '✗',
+    trivial: process.env.TRIVIAL_FOLDER_ID ? '✓' : '✗'
+});
+console.log('MASTER_INDEX_SHEET_ID:', process.env.MASTER_INDEX_SHEET_ID ? '✓' : '✗');
+console.log('================================================\n');
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
