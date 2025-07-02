@@ -23,6 +23,17 @@ const config = {
         clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
         privateKey: process.env.GOOGLE_PRIVATE_KEY,
         serviceAccountKey: process.env.GOOGLE_SERVICE_ACCOUNT_KEY,
+        // Parse JSON service account if provided
+        serviceAccountJson: (() => {
+            const jsonString = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+            if (!jsonString) return null;
+            try {
+                return JSON.parse(jsonString);
+            } catch (error) {
+                console.warn('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', error.message);
+                return null;
+            }
+        })(),
         // OAuth2 credentials (base64 encoded, fallback)
         credentialsBase64: process.env.GOOGLE_CREDENTIALS_BASE64,
         tokenBase64: process.env.GOOGLE_TOKEN_BASE64,
