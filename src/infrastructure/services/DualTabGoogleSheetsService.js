@@ -315,6 +315,11 @@ class DualTabGoogleSheetsService {
         // Extract processed data from the processor's structure
         const processedData = originalRecording.processed || {};
         
+        // Debug logging for UUID
+        console.log('🔍 DEBUG: Raw Tab UUID Check');
+        console.log('   originalRecording.uuid:', originalRecording.uuid);
+        console.log('   originalRecording.id:', originalRecording.id);
+        
         // Use the ORIGINAL Zoom UUID and convert to Base64 for Zoom API compatibility
         const originalUuid = originalRecording.uuid || originalRecording.id;
         const uuidBase64 = this._convertUuidToBase64(originalUuid);
@@ -456,6 +461,11 @@ class DualTabGoogleSheetsService {
         
         // Extract outcomes metadata
         const outcomesMetadata = processedData.outcomesMetadata || {};
+        
+        // Debug logging for UUID
+        console.log('🔍 DEBUG: Smart Data UUID Check');
+        console.log('   original.uuid:', original.uuid);
+        console.log('   original.id:', original.id);
         
         // Use ORIGINAL Zoom UUID and convert to Base64 for Zoom API compatibility
         const originalUuid = original.uuid || original.id;
@@ -1624,6 +1634,12 @@ class DualTabGoogleSheetsService {
     _convertUuidToBase64(uuid) {
         if (!uuid) return '';
         
+        // If already in Base64 format (contains == or ends with alphanumeric+/), return as is
+        if (uuid.includes('==') || /[A-Za-z0-9+/]=$/.test(uuid)) {
+            console.log('   UUID already in Base64 format:', uuid);
+            return uuid;
+        }
+        
         try {
             // Remove dashes if present
             const cleanUuid = uuid.replace(/-/g, '');
@@ -1632,7 +1648,9 @@ class DualTabGoogleSheetsService {
             const buffer = Buffer.from(cleanUuid, 'hex');
             
             // Convert to Base64
-            return buffer.toString('base64');
+            const base64 = buffer.toString('base64');
+            console.log('   Converted UUID from hex to Base64:', base64);
+            return base64;
         } catch (error) {
             this.logger.warn(`Failed to convert UUID to Base64: ${uuid}`, error);
             return uuid; // Return original if conversion fails
