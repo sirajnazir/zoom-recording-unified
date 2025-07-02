@@ -1456,6 +1456,7 @@ class ProductionZoomProcessor {
                 // ===== DRIVE INTEGRATION =====
                 driveFolder: '', // Will be updated after Drive upload
                 driveFolderId: '', // Will be updated after Drive upload
+                driveLink: '', // Will be updated after Drive upload
                 videoFileId: '', // Will be updated after Drive upload
                 transcriptFileId: '', // Will be updated after Drive upload
                 
@@ -1888,6 +1889,7 @@ class ProductionZoomProcessor {
                     // Update the processed recording with Drive information
                     processedRecording.driveFolder = driveLink || '';
                     processedRecording.driveFolderId = driveFolderId || '';
+                    processedRecording.driveLink = driveLink || '';
                     processedRecording.videoFileId = driveFileIds?.video || '';
                     processedRecording.transcriptFileId = driveFileIds?.transcript || '';
                     
