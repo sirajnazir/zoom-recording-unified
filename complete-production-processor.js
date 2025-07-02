@@ -1293,7 +1293,8 @@ class ProductionZoomProcessor {
                         sessionType: nameAnalysis.components?.sessionType || 'Coaching',
                         date: recording.start_time.split('T')[0],
                         meetingId: recording.id,
-                        uuid: recording.uuid
+                        uuid: recording.uuid,
+                        topic: recording.topic
                     });
                     
                     // Update the name analysis with corrected folder name

@@ -320,7 +320,8 @@ class CompleteSmartNameStandardizer {
                 sessionType: sessionType,
                 date: this.getDate(context),
                 meetingId: context.id || context.meeting_id,
-                uuid: context.uuid
+                uuid: context.uuid,
+                topic: recording.topic
             });
             
             // Calculate confidence
@@ -831,7 +832,7 @@ class CompleteSmartNameStandardizer {
      * Build standardized folder name
      * Format: {SessionType}_{coach}_{student}_Wk{number}_{date}_M:{meetingId}U:{uuid}
      */
-    buildStandardizedFolderName({ coach, student, weekNumber, sessionType, date, meetingId, uuid }) {
+    buildStandardizedFolderName({ coach, student, weekNumber, sessionType, date, meetingId, uuid, topic }) {
         // Special handling for Game Plan sessions
         if (sessionType === 'GamePlan') {
             // Game Plan sessions: Coaching_GamePlan_Jenny_[Student]_Wk1_[Date]_M:[meetingId]U:[uuid]
