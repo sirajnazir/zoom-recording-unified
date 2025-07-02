@@ -21,6 +21,14 @@ if (hasServiceAccountJson) {
         console.log('Has client_email:', !!parsed.client_email);
         console.log('Has private_key:', !!parsed.private_key);
         console.log('client_email value:', parsed.client_email || 'MISSING');
+        
+        // IMPORTANT: Set the parsed values as environment variables
+        // so the config module can pick them up
+        if (parsed.client_email && parsed.private_key) {
+            process.env.GOOGLE_CLIENT_EMAIL = parsed.client_email;
+            process.env.GOOGLE_PRIVATE_KEY = parsed.private_key;
+            console.log('✅ Set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY env vars');
+        }
     } catch (error) {
         console.log('❌ JSON parse error:', error.message);
     }
