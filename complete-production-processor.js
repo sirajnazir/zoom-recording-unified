@@ -2230,10 +2230,13 @@ class ProductionZoomProcessor {
                     console.log('🔄 Continuing with processing...\n');
                 }
                 
-                // Generate new UUID for processing (only if we're proceeding with processing)
-                recording.uuid = this._generateUUID();
+                // Preserve original base64 UUID from Zoom (don't overwrite with hex UUID)
+                const existingUuid = recording.uuid || recording.id;
+                if (!recording.uuid) {
+                    recording.uuid = existingUuid; // Use original if no UUID exists
+                }
                 recording.fingerprint = this._generateFingerprint(recording.id, recording.start_time);
-                console.log(`🔑 Generated NEW UUID for processing: ${recording.uuid}`);
+                console.log(`🔑 Using ORIGINAL UUID from Zoom: ${recording.uuid}`);
                 console.log(`🔑 Generated Fingerprint: ${recording.fingerprint}`);
                 
                 const result = await this.processRecording(recording, { lightweight, cloudLightweight });
