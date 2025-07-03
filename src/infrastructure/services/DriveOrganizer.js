@@ -14,6 +14,11 @@ class DriveOrganizer {
     async organizeRecording(recording, processedData) {
         try {
             this.logger.info(`🗂️ Organizing recording in Google Drive: ${recording.topic}`);
+            this.logger.info(`🔍 [DEBUG] processedData keys: ${Object.keys(processedData).join(', ')}`);
+            this.logger.info(`🔍 [DEBUG] processedData.insights exists: ${!!processedData.insights}`);
+            if (processedData.insights) {
+                this.logger.info(`🔍 [DEBUG] processedData.insights keys: ${Object.keys(processedData.insights).join(', ')}`);
+            }
 
             // Determine the appropriate folder structure
             const folderStructure = await this.determineFolderStructure(recording, processedData);
@@ -52,6 +57,7 @@ class DriveOrganizer {
                 );
             } else {
                 this.logger.warn(`⚠️ [AI INSIGHTS DEBUG] No insights object found for recording: ${recording.id}`);
+                this.logger.info(`🔍 [AI INSIGHTS DEBUG] processedData keys: ${Object.keys(processedData).join(', ')}`);
             }
 
             // Update folder metadata
