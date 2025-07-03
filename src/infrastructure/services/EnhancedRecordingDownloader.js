@@ -409,12 +409,12 @@ class EnhancedRecordingDownloader extends EventEmitter {
      * Generate filename for recording file (preserved from original)
      */
     generateFileName(file, recording) {
-        const recordingId = recording.uuid || recording.id || 'unknown';
         const fileType = file.file_type.toLowerCase();
         const extension = this.getFileExtension(fileType);
         
-        // Include file type in filename for clarity
-        return `${recordingId}_${fileType}${extension}`;
+        // Don't include UUID in filename since it's already in the directory path
+        // Just use the file type with extension
+        return `${fileType}${extension}`;
     }
 
     /**
