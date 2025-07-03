@@ -43,7 +43,15 @@ const options = {
     dryRun: false,
     lightweight: false, // Skip heavy media files (video, audio)
     cloudLightweight: false, // NEW: Process all cloud recordings but skip video/audio files
-    help: false
+    help: false,
+    // NEW: Enhanced download options
+    useParallelDownloads: false,
+    useStreamingDownloads: false,
+    downloadConcurrency: 4,
+    downloadTimeout: 300000, // 5 minutes
+    enableResumeDownloads: false,
+    maxRetries: 3,
+    maxConnections: 20
 };
 
 // Parse command line arguments
@@ -100,11 +108,39 @@ for (let i = 0; i < args.length; i++) {
                 options.dateRange = parseInt(value);
                 console.log(`🔍 DEBUG: Set dateRange to: ${options.dateRange}`);
                 break;
-            case '--auto-approve':
-            case '--yes-to-all':
-                options.autoApprove = value === 'true' || value === '1';
-                console.log(`🔍 DEBUG: Set autoApprove to: ${options.autoApprove}`);
-                break;
+                    case '--auto-approve':
+        case '--yes-to-all':
+            options.autoApprove = value === 'true' || value === '1';
+            console.log(`🔍 DEBUG: Set autoApprove to: ${options.autoApprove}`);
+            break;
+        case '--parallel-downloads':
+            options.useParallelDownloads = value === 'true' || value === '1';
+            console.log(`🔍 DEBUG: Set useParallelDownloads to: ${options.useParallelDownloads}`);
+            break;
+        case '--streaming-downloads':
+            options.useStreamingDownloads = value === 'true' || value === '1';
+            console.log(`🔍 DEBUG: Set useStreamingDownloads to: ${options.useStreamingDownloads}`);
+            break;
+        case '--download-concurrency':
+            options.downloadConcurrency = parseInt(value);
+            console.log(`🔍 DEBUG: Set downloadConcurrency to: ${options.downloadConcurrency}`);
+            break;
+        case '--download-timeout':
+            options.downloadTimeout = parseInt(value);
+            console.log(`🔍 DEBUG: Set downloadTimeout to: ${options.downloadTimeout}`);
+            break;
+        case '--resume-downloads':
+            options.enableResumeDownloads = value === 'true' || value === '1';
+            console.log(`🔍 DEBUG: Set enableResumeDownloads to: ${options.enableResumeDownloads}`);
+            break;
+        case '--max-retries':
+            options.maxRetries = parseInt(value);
+            console.log(`🔍 DEBUG: Set maxRetries to: ${options.maxRetries}`);
+            break;
+        case '--max-connections':
+            options.maxConnections = parseInt(value);
+            console.log(`🔍 DEBUG: Set maxConnections to: ${options.maxConnections}`);
+            break;
         }
         continue;
     }
@@ -169,6 +205,38 @@ for (let i = 0; i < args.length; i++) {
             options.autoApprove = true;
             console.log(`🔍 DEBUG: Set autoApprove to: ${options.autoApprove}`);
             break;
+        case '--parallel-downloads':
+            options.useParallelDownloads = true;
+            console.log(`🔍 DEBUG: Set useParallelDownloads to: ${options.useParallelDownloads}`);
+            break;
+        case '--streaming-downloads':
+            options.useStreamingDownloads = true;
+            console.log(`🔍 DEBUG: Set useStreamingDownloads to: ${options.useStreamingDownloads}`);
+            break;
+        case '--download-concurrency':
+            options.downloadConcurrency = parseInt(nextArg);
+            console.log(`🔍 DEBUG: Set downloadConcurrency to: ${options.downloadConcurrency}`);
+            i++;
+            break;
+        case '--download-timeout':
+            options.downloadTimeout = parseInt(nextArg);
+            console.log(`🔍 DEBUG: Set downloadTimeout to: ${options.downloadTimeout}`);
+            i++;
+            break;
+        case '--resume-downloads':
+            options.enableResumeDownloads = true;
+            console.log(`🔍 DEBUG: Set enableResumeDownloads to: ${options.enableResumeDownloads}`);
+            break;
+        case '--max-retries':
+            options.maxRetries = parseInt(nextArg);
+            console.log(`🔍 DEBUG: Set maxRetries to: ${options.maxRetries}`);
+            i++;
+            break;
+        case '--max-connections':
+            options.maxConnections = parseInt(nextArg);
+            console.log(`🔍 DEBUG: Set maxConnections to: ${options.maxConnections}`);
+            i++;
+            break;
         case '--help':
         case '-h':
             options.help = true;
@@ -195,6 +263,13 @@ Options:
   --lightweight               Skip heavy media files (video, audio) - download only critical files
   --cloud-lightweight         Process all cloud recordings but skip video/audio files (transcript only)
   --auto-approve, --yes-to-all  Automatically approve all recordings without asking for confirmation
+  --parallel-downloads          Enable parallel downloads for multiple files
+  --streaming-downloads         Enable streaming downloads with resume capability
+  --download-concurrency <num>  Number of concurrent downloads (default: 4)
+  --download-timeout <ms>       Download timeout in milliseconds (default: 300000)
+  --resume-downloads            Enable resume capability for interrupted downloads
+  --max-retries <num>           Maximum retry attempts for failed downloads (default: 3)
+  --max-connections <num>       Maximum concurrent connections (default: 20)
   --help, -h                  Show this help message
 
 Modes:
@@ -599,7 +674,8 @@ class ProductionZoomProcessor {
         const swiClass = require('./src/infrastructure/services/SmartWeekInferencer').SmartWeekInferencer;
         const emeClass = require('./src/infrastructure/services/EnhancedMetadataExtractor').EnhancedMetadataExtractor;
         const fcaClass = require('./src/infrastructure/services/FileContentAnalyzer').FileContentAnalyzer;
-        const rdClass = diagnosticRequire('./src/infrastructure/services/RecordingDownloader');
+        const rdModule = diagnosticRequire('./src/infrastructure/services/EnhancedRecordingDownloader');
+        const rdClass = rdModule.EnhancedRecordingDownloader || rdModule;
         const doClass = diagnosticRequire('./src/infrastructure/services/DriveOrganizer');
         console.log('DEBUG: typeof csnsClass:', typeof csnsClass, 'isClass:', typeof csnsClass === 'function');
         console.dir(csnsClass);
@@ -619,7 +695,17 @@ class ProductionZoomProcessor {
             smartWeekInferencer: asClass(swiClass).singleton(),
             enhancedMetadataExtractor: asClass(emeClass).singleton(),
             fileContentAnalyzer: asClass(fcaClass).singleton(),
-            recordingDownloader: asClass(rdClass).singleton(),
+            recordingDownloader: asClass(rdClass).singleton().inject((container) => ({
+                options: {
+                    useParallelDownloads: options.useParallelDownloads,
+                    useStreamingDownloads: options.useStreamingDownloads,
+                    downloadConcurrency: options.downloadConcurrency,
+                    downloadTimeout: options.downloadTimeout,
+                    enableResumeDownloads: options.enableResumeDownloads,
+                    maxRetries: options.maxRetries,
+                    maxConnections: options.maxConnections
+                }
+            })),
             driveOrganizer: asClass(doClass).singleton()
         });
 
@@ -838,7 +924,7 @@ class ProductionZoomProcessor {
 
         console.log('\n✅ Container setup complete\n');
         console.log('📊 Services registered with correct paths:');
-        console.log('   ✓ RecordingDownloader: src/infrastructure/services/RecordingDownloader.js');
+        console.log('   ✓ EnhancedRecordingDownloader: src/infrastructure/services/EnhancedRecordingDownloader.js');
         console.log('   ✓ DriveOrganizer: src/infrastructure/services/DriveOrganizer.js');
         console.log('   ✓ OutcomeExtractor: src/domain/services/OutcomeExtractor.js');
         console.log('   ✓ RelationshipAnalyzer: src/domain/services/RelationshipAnalyzer.js');

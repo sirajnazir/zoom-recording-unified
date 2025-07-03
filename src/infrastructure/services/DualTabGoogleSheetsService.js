@@ -157,7 +157,10 @@ class DualTabGoogleSheetsService {
             processedDate: 'AU',           // Processing date
             processingVersion: 'AV',       // Processing version
             dataSource: 'AW',              // Data source
-            lastUpdated: 'AX'              // Last updated timestamp
+            lastUpdated: 'AX',             // Last updated timestamp
+            
+            // AY: Drive Link
+            driveLink: 'AY'                // Google Drive folder link
         };
     }
     
@@ -952,13 +955,15 @@ class DualTabGoogleSheetsService {
             smartData.driveFolderId,
             smartData.videoFileId,
             smartData.transcriptFileId,
-            smartData.driveLink,
             
             // Processing Metadata
             smartData.processedDate,
             smartData.processingVersion,
             smartData.dataSource,
             smartData.lastUpdated,
+            
+            // Drive Link (Column AY)
+            smartData.driveLink,
             
             // ===== COMPREHENSIVE AI INSIGHTS =====
             // Session Overview
@@ -1287,8 +1292,7 @@ class DualTabGoogleSheetsService {
             
             // ===== DATA SOURCE =====
             smartData.data_source || 'zoom_cloud_processing',
-            smartData.driveFolderId || '',
-            smartData.driveLink || ''
+            smartData.driveFolderId || ''
         ];
     }
     
@@ -1367,7 +1371,7 @@ class DualTabGoogleSheetsService {
             // Get all recordings from standardized tab to search for UUID
             const response = await this.sheets.spreadsheets.values.get({
                 spreadsheetId: this.spreadsheetId,
-                range: `${this.tabs.standardized.name}!A:AX`
+                range: `${this.tabs.standardized.name}!A:AY`
             });
             
             const values = response.data.values || [];
@@ -1427,7 +1431,8 @@ class DualTabGoogleSheetsService {
                         processedDate: row[46] || '',
                         processingVersion: row[47] || '',
                         dataSource: row[48] || '',
-                        lastUpdated: row[49] || ''
+                        lastUpdated: row[49] || '',
+                        driveLink: row[50] || ''
                     };
                     
                     // Cache the recording

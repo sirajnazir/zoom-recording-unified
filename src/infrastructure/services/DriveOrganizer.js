@@ -396,6 +396,10 @@ class DriveOrganizer {
             this.logger.info(`[DEBUG] File type: ${type}, path: ${filePath}`);
         });
 
+        // Get the standardized folder name to use as base for file names
+        const folderName = sessionFolder.name;
+        this.logger.info(`[DEBUG] Using folder name as base for file naming: ${folderName}`);
+
         // Manual upload process - use the session folder from hierarchy
         for (const [type, filePath] of Object.entries(files)) {
             if (!filePath) continue;
@@ -406,11 +410,14 @@ class DriveOrganizer {
             uploadedTypes.add(type);
 
             try {
-                const fileName = path.basename(filePath);
-                const mimeType = this.getMimeType(fileName);
+                // Generate standardized file name based on folder name and file type
+                const standardizedFileName = this.generateStandardizedFileName(folderName, type);
+                const mimeType = this.getMimeType(standardizedFileName);
+
+                this.logger.info(`[DEBUG] Uploading ${type} with standardized name: ${standardizedFileName}`);
 
                 const uploadedFile = await this.googleDriveService.uploadFile(filePath, {
-                    name: fileName,
+                    name: standardizedFileName,
                     parents: [sessionFolder.id],
                     mimeType,
                     description: `${type} for ${recording.topic}`
@@ -419,7 +426,7 @@ class DriveOrganizer {
                 uploadedFiles[type] = uploadedFile;
                 this.logger.info(`File uploaded successfully`, {
                     fileId: uploadedFile.id,
-                    fileName: fileName,
+                    fileName: standardizedFileName,
                     uploadTime: Date.now(),
                     fileSize: uploadedFile.size || 'unknown'
                 });
@@ -432,20 +439,46 @@ class DriveOrganizer {
     }
 
     /**
+     * Generate standardized file name based on folder name and file type
+     */
+    generateStandardizedFileName(folderName, fileType) {
+        const fileTypeSuffixes = {
+            video: 'mp4',
+            audio: 'm4a',
+            transcript: 'vtt',
+            timeline: 'json',
+            chat: 'txt',
+            insights: 'md',
+            outcomes: 'json',
+            summary: 'txt',
+            highlights: 'json',
+            actionItems: 'json',
+            coachingNotes: 'json'
+        };
+
+        const suffix = fileTypeSuffixes[fileType] || 'txt';
+        return `${folderName}.${suffix}`;
+    }
+
+    /**
      * Create insights document in Google Drive
      */
     async createInsightsDocument(recording, insights, sessionFolder) {
         try {
-            const docName = `Insights_${recording.topic}_${new Date(recording.start_time).toISOString().split('T')[0]}`;
+            // Use the standardized folder name for the insights document
+            const folderName = sessionFolder.name;
+            const docName = `${folderName}.md`;
             const docContent = this.formatInsightsForDocument(recording, insights);
 
+            this.logger.info(`[DEBUG] Creating insights document with standardized name: ${docName}`);
+
             // Create a temporary file with the insights
-            const tempPath = path.join(process.env.OUTPUT_DIR || './output', `${docName}.md`);
+            const tempPath = path.join(process.env.OUTPUT_DIR || './output', docName);
             await require('fs').promises.writeFile(tempPath, docContent);
 
             // Upload to Drive
             const uploadedDoc = await this.googleDriveService.uploadFile(tempPath, {
-                name: `${docName}.md`,
+                name: docName,
                 parents: [sessionFolder.id],
                 mimeType: 'text/markdown',
                 description: `AI-generated insights for ${recording.topic}`
