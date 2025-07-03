@@ -236,6 +236,24 @@ class CompleteSmartNameStandardizer {
     }
     
     /**
+     * Helper to check if a UUID is base64 (Zoom format)
+     */
+    isBase64Uuid(uuid) {
+        // Zoom base64 UUIDs are typically 22 chars and end with ==
+        return typeof uuid === 'string' && uuid.length >= 22 && uuid.endsWith('==');
+    }
+
+    /**
+     * Helper to check if a UUID is hex or hex-with-dashes
+     */
+    isHexUuid(uuid) {
+        return typeof uuid === 'string' && (
+            /^[a-f0-9]{32}$/i.test(uuid) ||
+            /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(uuid)
+        );
+    }
+
+    /**
      * Main standardization method - RESTORED FROM BACKUP WORKING VERSION
      * Simple, direct approach that worked reliably
      */
@@ -244,7 +262,6 @@ class CompleteSmartNameStandardizer {
             if (!input || typeof input !== 'string') {
                 return this.createErrorResult(input);
             }
-            
             // Build recording object
             const recording = {
                 topic: input,
@@ -252,66 +269,31 @@ class CompleteSmartNameStandardizer {
                 duration: context.duration,
                 ...context
             };
-            
             // Extract all components (including enhanced student extraction)
             const components = await this.extractComponents(recording);
-            
             // --- ENHANCED: For Personal Meeting Room, ensure student extraction is complete before session type ---
-            if ((recording.topic || '').toLowerCase().includes('personal meeting room') && components.student === 'Unknown') {
-                this.logger?.info(`🔍 [ENHANCED] Personal Meeting Room detected, trying enhanced student extraction...`);
-                
-                // Debug: Log what context we have
-                this.logger?.info(`[DEBUG] Context transcriptContent length: ${context.transcriptContent?.length || 0}`);
-                this.logger?.info(`[DEBUG] Context chatContent length: ${context.chatContent?.length || 0}`);
-                this.logger?.info(`[DEBUG] Context participants count: ${context.participants?.length || 0}`);
-                
-                // Try to extract student from participants
-                if (recording.participants && recording.participants.length > 0) {
-                    const studentFromParticipants = this.extractStudentFromParticipants(recording.participants, components.coach);
-                    if (studentFromParticipants) {
-                        components.student = await this.standardizeStudentName(studentFromParticipants);
-                        components.method = components.method === 'unknown' ? 'participants' : components.method;
-                        this.logger?.info(`✅ [ENHANCED] Student extracted from participants: ${components.student}`);
-                    }
-                }
-                
-                // Try to extract student from transcript content (now passed in context)
-                if (components.student === 'Unknown' && context.transcriptContent && context.transcriptContent.length > 50) {
-                    this.logger?.info(`[DEBUG] Attempting transcript extraction with ${context.transcriptContent.length} characters`);
-                    const studentFromTranscript = this.extractStudentFromTranscript(context.transcriptContent, components.coach);
-                    if (studentFromTranscript) {
-                        components.student = await this.standardizeStudentName(studentFromTranscript);
-                        components.method = components.method === 'unknown' ? 'transcript' : components.method;
-                        this.logger?.info(`✅ [ENHANCED] Student extracted from transcript: ${components.student}`);
-                    } else {
-                        this.logger?.info(`[DEBUG] No student found in transcript content`);
-                    }
-                } else {
-                    this.logger?.info(`[DEBUG] Skipping transcript extraction - content length: ${context.transcriptContent?.length || 0}`);
-                }
-                
-                // Try to extract student from chat content (now passed in context)
-                if (components.student === 'Unknown' && context.chatContent && context.chatContent.length > 20) {
-                    const studentFromChat = this.extractStudentFromChat(context.chatContent, components.coach);
-                    if (studentFromChat) {
-                        components.student = await this.standardizeStudentName(studentFromChat);
-                        components.method = components.method === 'unknown' ? 'chat' : components.method;
-                        this.logger?.info(`✅ [ENHANCED] Student extracted from chat: ${components.student}`);
-                    }
-                }
-            }
-            
+            if ((recording.topic || '').toLowerCase().includes('personal meeting room') && components.student === 'Unknown')
+                components.student = await this.tryExtractStudentFromTitle(recording.title);
             // Determine session type AFTER enhanced student extraction
             const sessionType = this.determineSessionType(components, recording);
             components.sessionType = sessionType;
-            
             // --- ENHANCED: Re-standardize coach name if this is a Game Plan session ---
             if (sessionType === 'GamePlan' && components.coach !== 'Jenny') {
                 this.logger?.info(`🔍 [GAME PLAN] Re-standardizing coach to Jenny for Game Plan session`);
                 components.coach = 'Jenny';
                 components.method = components.method === 'unknown' ? 'game_plan_override' : components.method;
             }
-            
+            // Always use the original base64 UUID for naming
+            let uuid = context.uuid;
+            if (this.isHexUuid(uuid)) {
+                this.logger?.warn(`⚠️ Hex or hex-dash UUID detected for naming: ${uuid}. Please use base64 UUID as from Zoom.`);
+                // Try to use context.originalUuid if available
+                if (context.originalUuid && this.isBase64Uuid(context.originalUuid)) {
+                    uuid = context.originalUuid;
+                } else {
+                    // Fallback: leave as is, but warn
+                }
+            }
             // Build standardized name
             const standardizedName = this.buildStandardizedFolderName({
                 coach: components.coach,
@@ -320,15 +302,12 @@ class CompleteSmartNameStandardizer {
                 sessionType: sessionType,
                 date: this.getDate(context),
                 meetingId: context.id || context.meeting_id,
-                uuid: context.uuid,
+                uuid: uuid,
                 topic: recording.topic
             });
-            
             // Calculate confidence
             const confidence = this.calculateConfidence(components, sessionType);
-            
             this.logger?.info(`✅ [PRIORITY] Final result - Coach: ${components.coach}, Student: ${components.student}, Method: ${components.method}`);
-            
             return {
                 standardized: standardizedName,
                 components: {
@@ -341,9 +320,7 @@ class CompleteSmartNameStandardizer {
                 confidence: confidence,
                 raw: input
             };
-            
         } catch (error) {
-            this.logger?.error('Error in standardizeName:', error);
             return this.createErrorResult(input, error);
         }
     }
@@ -831,38 +808,42 @@ class CompleteSmartNameStandardizer {
     /**
      * Build standardized folder name
      * Format: {SessionType}_{coach}_{student}_Wk{number}_{date}_M:{meetingId}U:{uuid}
+     * Always use base64 UUID for the U: part
      */
     buildStandardizedFolderName({ coach, student, weekNumber, sessionType, date, meetingId, uuid, topic }) {
+        // Only use base64 UUID for naming
+        let safeUuid = uuid;
+        if (this.isHexUuid(uuid)) {
+            this.logger?.warn(`⚠️ Hex or hex-dash UUID detected in buildStandardizedFolderName: ${uuid}. Please use base64 UUID as from Zoom.`);
+            safeUuid = uuid; // fallback, but warn
+        }
+        if (!this.isBase64Uuid(uuid)) {
+            this.logger?.warn(`⚠️ Non-base64 UUID detected in buildStandardizedFolderName: ${uuid}. Folder/file names may not match Google Sheet.`);
+        }
         // Special handling for Game Plan sessions
         if (sessionType === 'GamePlan') {
-            // Game Plan sessions: Coaching_GamePlan_Jenny_[Student]_Wk1_[Date]_M:[meetingId]U:[uuid]
             const studentFirstName = student.split(' ')[0];
             const parts = [
                 'Coaching_GamePlan',
-                'Jenny', // Always Jenny for Game Plan
+                'Jenny',
                 studentFirstName !== 'Unknown' ? studentFirstName : 'Unknown',
-                'Wk1', // Always Week 1 for Game Plan
+                'Wk1',
                 date,
-                `M:${meetingId}U:${uuid}`
+                `M:${meetingId}U:${safeUuid}`
             ];
             return parts.join('_');
         }
-        
-        // Special handling for TRIVIAL sessions
         if (sessionType === 'TRIVIAL') {
             const parts = [
                 'TRIVIAL',
                 coach.replace(/\s+/g, '') !== 'Unknown' ? coach.replace(/\s+/g, '') : 'unknown',
                 student.split(' ')[0] !== 'Unknown' ? student.split(' ')[0] : 'Unknown',
                 date,
-                `M:${meetingId}U:${uuid}`
+                `M:${meetingId}U:${safeUuid}`
             ];
             return parts.join('_');
         }
-        
         const parts = [];
-        
-        // Session type prefix
         switch (sessionType) {
             case 'SAT':
                 parts.push('SAT');
@@ -871,11 +852,10 @@ class CompleteSmartNameStandardizer {
                 parts.push('MISC');
                 break;
             case 'MISC':
-                // NEW: Special handling for NO SHOW scenarios
                 if (topic && topic.toLowerCase().includes('personal meeting room') && 
                     coach && coach !== 'Unknown' && 
                     student && student !== 'Unknown') {
-                    parts.push('NO_SHOW'); // Special prefix for NO SHOW scenarios
+                    parts.push('NO_SHOW');
                 } else {
                     parts.push('MISC');
                 }
@@ -883,18 +863,11 @@ class CompleteSmartNameStandardizer {
             default:
                 parts.push('Coaching');
         }
-        
-        // Coach name (remove spaces for consistency)
         const coachName = coach.replace(/\s+/g, '');
         parts.push(coachName !== 'Unknown' ? coachName : 'unknown');
-        
-        // Student name (first name only)
         const studentFirstName = student.split(' ')[0];
         parts.push(studentFirstName !== 'Unknown' ? studentFirstName : 'Unknown');
-        
-        // Week number
         if (weekNumber && sessionType !== 'Admin' && sessionType !== 'MISC') {
-            // Handle special week formats (e.g., Wk00B)
             const weekStr = String(weekNumber);
             if (weekStr.match(/^\d+$/)) {
                 parts.push(`Wk${weekStr.padStart(2, '0')}`);
@@ -904,15 +877,10 @@ class CompleteSmartNameStandardizer {
         } else {
             parts.push('WkUnknown');
         }
-        
-        // Date in YYYY-MM-DD format
         parts.push(date);
-        
-        // CRITICAL FIX: Add unique identifier suffix to prevent conflicts
-        if (meetingId && uuid) {
-            parts.push(`M:${meetingId}U:${uuid}`);
+        if (meetingId && safeUuid) {
+            parts.push(`M:${meetingId}U:${safeUuid}`);
         }
-        
         return parts.join('_');
     }
     
