@@ -9,6 +9,7 @@
 
 const winston = require('winston');
 const { EventEmitter } = require('events');
+const { Logger } = require('./Logger');
 
 // ============================================================================
 // LOGGER
@@ -341,6 +342,7 @@ function formatDuration(ms) {
 module.exports = {
     // Core utilities
     logger,
+    Logger,
     EventBus,
     Cache,
     MetricsCollector,

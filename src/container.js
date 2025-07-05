@@ -20,7 +20,7 @@ const { EventBus, Logger, Cache, MetricsCollector } = require('./shared');
 logToFile('Loaded shared utilities:', { EventBus, Logger, Cache, MetricsCollector });
 
 // Infrastructure services
-let ZoomService, GoogleDriveService, DualTabGoogleSheetsService, SmartWeekInferencer, EnhancedMetadataExtractor, FileContentAnalyzer, KnowledgeBaseService, OpenAIService, CompleteSmartNameStandardizer;
+let ZoomService, GoogleDriveService, DualTabGoogleSheetsService, SmartWeekInferencer, EnhancedMetadataExtractor, FileContentAnalyzer, KnowledgeBaseService, OpenAIService, CompleteSmartNameStandardizer, DriveOrganizer, AIPoweredInsightsGenerator;
 try { ZoomService = require('./infrastructure/services/ZoomService').ZoomService; } catch (e) { logToFile('ZoomService import error:', e); }
 try { GoogleDriveService = require('./infrastructure/services/GoogleDriveService').GoogleDriveService; } catch (e) { logToFile('GoogleDriveService import error:', e); }
 try { DualTabGoogleSheetsService = require('./infrastructure/services/DualTabGoogleSheetsService').DualTabGoogleSheetsService; } catch (e) { logToFile('DualTabGoogleSheetsService import error:', e); }
@@ -30,7 +30,9 @@ try { FileContentAnalyzer = require('./infrastructure/services/FileContentAnalyz
 try { KnowledgeBaseService = require('./infrastructure/services/KnowledgeBaseService').KnowledgeBaseService; } catch (e) { logToFile('KnowledgeBaseService import error:', e); }
 try { OpenAIService = require('./infrastructure/services/OpenAIService').OpenAIService; } catch (e) { logToFile('OpenAIService import error:', e); }
 try { CompleteSmartNameStandardizer = require('./infrastructure/services/CompleteSmartNameStandardizer').CompleteSmartNameStandardizer; } catch (e) { logToFile('CompleteSmartNameStandardizer import error:', e); }
-logToFile('Loaded infrastructure services:', { ZoomService, GoogleDriveService, DualTabGoogleSheetsService, SmartWeekInferencer, EnhancedMetadataExtractor, FileContentAnalyzer, KnowledgeBaseService, OpenAIService, CompleteSmartNameStandardizer });
+try { DriveOrganizer = require('./infrastructure/services/DriveOrganizer'); } catch (e) { logToFile('DriveOrganizer import error:', e); }
+try { AIPoweredInsightsGenerator = require('./infrastructure/ai/ai-powered-insights-generator'); } catch (e) { logToFile('AIPoweredInsightsGenerator import error:', e); }
+logToFile('Loaded infrastructure services:', { ZoomService, GoogleDriveService, DualTabGoogleSheetsService, SmartWeekInferencer, EnhancedMetadataExtractor, FileContentAnalyzer, KnowledgeBaseService, OpenAIService, CompleteSmartNameStandardizer, DriveOrganizer, AIPoweredInsightsGenerator });
 
 // Application services
 let RecordingAnalyzer, InsightsGenerator, TranscriptionAnalyzer, ParticipantAnalyzer, RecordingProcessor, RecordingService;
@@ -98,47 +100,49 @@ function createContainer() {
 
     // Infrastructure services
     container.register({
-        openAIService: awilix.asClass(OpenAIService).singleton(),
-        zoomService: awilix.asClass(ZoomService).singleton(),
-        googleDriveService: awilix.asClass(GoogleDriveService).singleton(),
-        googleSheetsService: awilix.asClass(DualTabGoogleSheetsService).singleton(),
-        completeSmartNameStandardizer: awilix.asValue(new CompleteSmartNameStandardizer()),
-        smartWeekInferencer: awilix.asClass(SmartWeekInferencer).singleton(),
-        enhancedMetadataExtractor: awilix.asClass(EnhancedMetadataExtractor).singleton(),
-        fileContentAnalyzer: awilix.asClass(FileContentAnalyzer).singleton(),
-        knowledgeBaseService: awilix.asClass(KnowledgeBaseService).singleton(),
+        ...(OpenAIService && { openAIService: awilix.asClass(OpenAIService).singleton() }),
+        ...(ZoomService && { zoomService: awilix.asClass(ZoomService).singleton() }),
+        ...(GoogleDriveService && { googleDriveService: awilix.asClass(GoogleDriveService).singleton() }),
+        ...(DualTabGoogleSheetsService && { googleSheetsService: awilix.asClass(DualTabGoogleSheetsService).singleton() }),
+        ...(CompleteSmartNameStandardizer && { completeSmartNameStandardizer: awilix.asValue(new CompleteSmartNameStandardizer()) }),
+        ...(SmartWeekInferencer && { smartWeekInferencer: awilix.asClass(SmartWeekInferencer).singleton() }),
+        ...(EnhancedMetadataExtractor && { enhancedMetadataExtractor: awilix.asClass(EnhancedMetadataExtractor).singleton() }),
+        ...(FileContentAnalyzer && { fileContentAnalyzer: awilix.asClass(FileContentAnalyzer).singleton() }),
+        ...(KnowledgeBaseService && { knowledgeBaseService: awilix.asClass(KnowledgeBaseService).singleton() }),
+        ...(DriveOrganizer && { driveOrganizer: awilix.asClass(DriveOrganizer).singleton() }),
+        ...(AIPoweredInsightsGenerator && { aiPoweredInsightsGenerator: awilix.asClass(AIPoweredInsightsGenerator).singleton() }),
         
         // Alias for backward compatibility
-        nameStandardizer: awilix.asValue(new CompleteSmartNameStandardizer()),
-        weekInferencer: awilix.asClass(SmartWeekInferencer).singleton(),
-        metadataExtractor: awilix.asClass(EnhancedMetadataExtractor).singleton(),
-        knowledgeBase: awilix.aliasTo('knowledgeBaseService')
+        ...(CompleteSmartNameStandardizer && { nameStandardizer: awilix.asValue(new CompleteSmartNameStandardizer()) }),
+        ...(SmartWeekInferencer && { weekInferencer: awilix.asClass(SmartWeekInferencer).singleton() }),
+        ...(EnhancedMetadataExtractor && { metadataExtractor: awilix.asClass(EnhancedMetadataExtractor).singleton() }),
+        ...(KnowledgeBaseService && { knowledgeBase: awilix.aliasTo('knowledgeBaseService') })
     });
 
     // Application services
     container.register({
-        recordingAnalyzer: awilix.asClass(RecordingAnalyzer).singleton(),
-        insightsGenerator: awilix.asClass(InsightsGenerator).singleton(),
-        transcriptionAnalyzer: awilix.asClass(TranscriptionAnalyzer).singleton(),
-        participantAnalyzer: awilix.asClass(ParticipantAnalyzer).singleton(),
-        recordingProcessor: awilix.asClass(RecordingProcessor).singleton(),
-        recordingService: awilix.asClass(RecordingService).singleton()
+        ...(RecordingAnalyzer && { recordingAnalyzer: awilix.asClass(RecordingAnalyzer).singleton() }),
+        ...(InsightsGenerator && { insightsGenerator: awilix.asClass(InsightsGenerator).singleton() }),
+        ...(TranscriptionAnalyzer && { transcriptionAnalyzer: awilix.asClass(TranscriptionAnalyzer).singleton() }),
+        ...(ParticipantAnalyzer && { participantAnalyzer: awilix.asClass(ParticipantAnalyzer).singleton() }),
+        ...(RecordingProcessor && { recordingProcessor: awilix.asClass(RecordingProcessor).singleton() }),
+        ...(RecordingService && { recordingService: awilix.asClass(RecordingService).singleton() })
     });
 
     // Domain services
     container.register({
-        outcomesProcessor: awilix.asClass(OutcomesProcessor).singleton()
+        ...(OutcomesProcessor && { outcomesProcessor: awilix.asClass(OutcomesProcessor).singleton() })
     });
 
     // Core entities
     container.register({
-        Recording: awilix.asValue(Recording),
-        Session: awilix.asValue(Session)
+        ...(Recording && { Recording: awilix.asValue(Recording) }),
+        ...(Session && { Session: awilix.asValue(Session) })
     });
 
     // Utils
     container.register({
-        recordingCategorizer: awilix.asClass(RecordingCategorizer).singleton()
+        ...(RecordingCategorizer && { recordingCategorizer: awilix.asClass(RecordingCategorizer).singleton() })
     });
 
     // Initialize function

@@ -53,8 +53,72 @@ class CompleteSmartNameStandardizer {
         // Initialize comprehensive student mappings
         this.studentMappings = this.loadComprehensiveStudentMappings();
         
-        // Meeting patterns
+        // Meeting patterns - ORDER MATTERS! More specific patterns first
         this.meetingPatterns = [
+            // Pattern for "Name | IvyLevel Week X" format (must come FIRST)
+            {
+                regex: /^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*\|\s*IvyLevel\s+Week\s+(\d+)/i,
+                fields: { student: 1, week: 2 },
+                sessionType: 'Coaching'
+            },
+            
+            // GamePlan pattern MUST come before generic patterns
+            {
+                regex: /Game\s*Plan/i,
+                sessionType: 'GamePlan',
+                skipFieldExtraction: true,  // Don't extract coach/student from pattern
+                extractStudent: (topic) => {
+                    // Extract student name from GamePlan title
+                    // Examples: "Gameplan & JennyDuan", "Game Plan - JennyDuan & Arshiya"
+                    
+                    // First check for patterns with & separating names
+                    // Specifically handle "Game Plan - JennyDuan & Arshiya" format
+                    const complexPattern = /Game\s*Plan\s*[-–]\s*\w+\s*&\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i;
+                    const complexMatch = topic.match(complexPattern);
+                    if (complexMatch && complexMatch[1]) {
+                        return complexMatch[1].trim();
+                    }
+                    
+                    // Also try pattern where names are together like "JennyDuan" before &
+                    const compoundPattern = /Game\s*Plan\s*[-–]\s*(\w+)(\w+)\s*&\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i;
+                    const compoundMatch = topic.match(compoundPattern);
+                    if (compoundMatch && compoundMatch[3]) {
+                        return compoundMatch[3].trim();
+                    }
+                    
+                    // Standard patterns
+                    const patterns = [
+                        /Game\s*Plan\s*&\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
+                        /Game\s*Plan\s*-\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
+                        /Game\s*Plan\s*:\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
+                        /Game\s*Plan\s+for\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
+                        /Game\s*Plan\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)/i
+                    ];
+                    
+                    for (const pattern of patterns) {
+                        const match = topic.match(pattern);
+                        if (match && match[1]) {
+                            // Clean up the student name
+                            let studentName = match[1].trim();
+                            // Handle cases like "JennyDuan" where Jenny is the coach
+                            if (studentName.toLowerCase().startsWith('jenny')) {
+                                studentName = studentName.substring(5).trim();
+                            }
+                            // Handle compound names like "JennyDuan"
+                            if (studentName.toLowerCase() === 'duan' || studentName.toLowerCase() === 'jennyduan') {
+                                // If we only got part of the name, look for the full pattern
+                                const fullMatch = topic.match(/&\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i);
+                                if (fullMatch && fullMatch[1]) {
+                                    return fullMatch[1].trim();
+                                }
+                            }
+                            return studentName;
+                        }
+                    }
+                    return null;
+                }
+            },
+            // Specific session patterns with delimiters
             {
                 regex: /^(?:Ivylevel\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*<>\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*\|\s*Session\s*#?\s*(\d+)/i,
                 fields: { coach: 1, student: 2, session: 3 },
@@ -71,17 +135,20 @@ class CompleteSmartNameStandardizer {
                 sessionType: 'Coaching'
             },
             {
-                regex: /^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*&\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
+                regex: /^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*<>\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
                 fields: { coach: 1, student: 2 },
                 sessionType: 'Coaching'
+            },
+            // Generic patterns that could match GamePlan incorrectly
+            {
+                regex: /^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*&\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
+                fields: { coach: 1, student: 2 },
+                sessionType: 'Coaching',
+                // Skip if GamePlan is detected
+                condition: (topic) => !topic.match(/Game\s*Plan/i)
             },
             {
                 regex: /^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*-\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
-                fields: { coach: 1, student: 2 },
-                sessionType: 'Coaching'
-            },
-            {
-                regex: /^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*<>\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i,
                 fields: { coach: 1, student: 2 },
                 sessionType: 'Coaching'
             },
@@ -92,16 +159,46 @@ class CompleteSmartNameStandardizer {
                 smartDetection: true
             },
             {
-                regex: /Game\s*Plan/i,
-                sessionType: 'GamePlan'
-            },
-            {
                 regex: /SAT\s*Prep|SAT\s*Session/i,
                 sessionType: 'SAT'
             },
             {
                 regex: /^(.+?)(?:'s|'s)\s+Personal\s+Meeting\s+Room$/i,
                 fields: { coach: 1 },
+                sessionType: 'Coaching',
+                extractStudent: (topic, match) => {
+                    // Extract student from "Jamie JudahBram's Personal Meeting Room"
+                    const fullName = match[1];
+                    
+                    // First check if it's a known coach followed by student name
+                    const coachStudentPattern = /^(jamie|noor|jenny|rishi|aditi|kelvin|erin|steven|marissa|andrew|janice|siraj|katie|alan|alice|vilina)\s+(.+)$/i;
+                    const coachStudentMatch = fullName.match(coachStudentPattern);
+                    if (coachStudentMatch) {
+                        return coachStudentMatch[2]; // Return the student part
+                    }
+                    
+                    // Check if it's a compound name like "Jamie JudahBram"
+                    const parts = fullName.split(/\s+/);
+                    if (parts.length >= 2) {
+                        // If first part is a known coach, return the rest as student
+                        const firstPart = parts[0].toLowerCase();
+                        if (this.coachMappings && this.coachMappings[firstPart]) {
+                            return parts.slice(1).join(' ');
+                        }
+                        
+                        // Otherwise, check if last part looks like a name
+                        const possibleStudent = parts[parts.length - 1];
+                        if (possibleStudent.length > 3 && /^[A-Z][a-z]+/.test(possibleStudent)) {
+                            return possibleStudent;
+                        }
+                    }
+                    return null;
+                }
+            },
+            // Add pattern for "Name | IvyLevel Week X" format
+            {
+                regex: /^([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*\|\s*IvyLevel\s+Week\s+(\d+)/i,
+                fields: { student: 1, week: 2 },
                 sessionType: 'Coaching'
             }
         ];
@@ -272,8 +369,21 @@ class CompleteSmartNameStandardizer {
             // Extract all components (including enhanced student extraction)
             const components = await this.extractComponents(recording);
             // --- ENHANCED: For Personal Meeting Room, ensure student extraction is complete before session type ---
-            if ((recording.topic || '').toLowerCase().includes('personal meeting room') && components.student === 'Unknown')
-                components.student = await this.tryExtractStudentFromTitle(recording.title);
+            if ((recording.topic || '').toLowerCase().includes('personal meeting room') && components.student === 'Unknown') {
+                // Try to extract student from compound names in Personal Meeting Room
+                const match = recording.topic.match(/^(.+?)(?:'s|'s)\s+Personal\s+Meeting\s+Room$/i);
+                if (match && match[1]) {
+                    const fullName = match[1];
+                    const parts = fullName.split(/\s+/);
+                    if (parts.length >= 2) {
+                        const possibleStudent = parts[parts.length - 1];
+                        if (possibleStudent.length > 3 && /^[A-Z][a-z]+/.test(possibleStudent)) {
+                            components.student = possibleStudent;
+                            this.logger?.info(`🔍 [PMR] Extracted student from Personal Meeting Room: ${possibleStudent}`);
+                        }
+                    }
+                }
+            }
             // Determine session type AFTER enhanced student extraction
             const sessionType = this.determineSessionType(components, recording);
             components.sessionType = sessionType;
@@ -425,10 +535,38 @@ class CompleteSmartNameStandardizer {
             
             // Try meeting patterns as last resort
             for (const pattern of this.meetingPatterns) {
+                // Check condition if present
+                if (pattern.condition && !pattern.condition(topic)) {
+                    continue;
+                }
+                
                 const match = topic.match(pattern.regex);
                 if (match) {
                     this.logger?.info(`[DEBUG] Pattern matched: ${pattern.regex.source}`);
                     this.logger?.info(`[DEBUG] Match groups:`, match);
+                    
+                    // Skip field extraction if specified (e.g., for GamePlan)
+                    if (pattern.skipFieldExtraction) {
+                        result.matchedPattern = pattern;
+                        result.method = result.method === 'unknown' ? 'pattern_match' : result.method;
+                        
+                        // Handle special extraction functions
+                        if (pattern.extractStudent && result.student === 'Unknown') {
+                            const extractedStudent = pattern.extractStudent(topic);
+                            if (extractedStudent) {
+                                result.student = await this.standardizeStudentName(extractedStudent);
+                                this.logger?.info(`[DEBUG] Extracted student from GamePlan pattern: ${result.student}`);
+                            }
+                        }
+                        
+                        // GamePlan sessions always have Jenny as coach
+                        if (pattern.sessionType === 'GamePlan' && result.coach === 'Unknown') {
+                            result.coach = 'Jenny';
+                            this.logger?.info(`[DEBUG] Set coach to Jenny for GamePlan session`);
+                        }
+                        
+                        break;
+                    }
                     
                     // Handle smart detection for "and" format
                     if (pattern.smartDetection) {
@@ -476,6 +614,16 @@ class CompleteSmartNameStandardizer {
                         result.coach = await this.standardizeCoachName(coachMatch);
                         this.logger?.info(`[DEBUG] Standardized coach: "${result.coach}"`);
                     }
+                    
+                    // Special handling for extractStudent function
+                    if (pattern.extractStudent && result.student === 'Unknown') {
+                        const extractedStudent = pattern.extractStudent(topic, match);
+                        if (extractedStudent) {
+                            result.student = await this.standardizeStudentName(extractedStudent);
+                            this.logger?.info(`[DEBUG] Student extracted via custom function: "${result.student}"`);
+                        }
+                    }
+                    
                     if (pattern.fields?.student && result.student === 'Unknown') {
                         const studentMatch = match[pattern.fields.student];
                         this.logger?.info(`[DEBUG] Student match: "${studentMatch}"`);

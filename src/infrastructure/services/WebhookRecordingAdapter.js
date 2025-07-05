@@ -41,7 +41,7 @@ class WebhookRecordingAdapter {
             // Meeting details
             topic: webhookRecording.topic,
             start_time: webhookRecording.start_time,
-            duration: webhookRecording.duration,
+            duration: this.ensureValidDuration(webhookRecording),
             timezone: webhookRecording.timezone,
             
             // Host information
@@ -139,6 +139,43 @@ class WebhookRecordingAdapter {
     }
 
     /**
+     * Ensure valid duration from webhook data
+     * Webhooks sometimes provide duration in milliseconds or have timing issues
+     */
+    ensureValidDuration(webhookRecording) {
+        const duration = webhookRecording.duration;
+        
+        // If no duration, try to calculate from recording files
+        if (!duration && webhookRecording.recording_files?.length > 0) {
+            for (const file of webhookRecording.recording_files) {
+                if (file.recording_start && file.recording_end) {
+                    const start = new Date(file.recording_start).getTime();
+                    const end = new Date(file.recording_end).getTime();
+                    const calculatedDuration = Math.floor((end - start) / 1000); // Convert to seconds
+                    if (calculatedDuration > 0) {
+                        this.logger.info(`Calculated duration from recording file: ${calculatedDuration} seconds`);
+                        return calculatedDuration;
+                    }
+                }
+            }
+        }
+        
+        // Check if duration seems to be in milliseconds (unreasonably large number)
+        if (duration > 86400) { // More than 24 hours in seconds
+            // Might be milliseconds
+            const durationInSeconds = Math.floor(duration / 1000);
+            if (durationInSeconds < 86400) { // Less than 24 hours
+                this.logger.info(`Converting duration from milliseconds: ${duration}ms -> ${durationInSeconds}s`);
+                return durationInSeconds;
+            }
+        }
+        
+        // Log the duration for debugging
+        this.logger.info(`Using webhook duration: ${duration} seconds`);
+        return duration || 0;
+    }
+
+    /**
      * Download recording files using the webhook access token
      * This is needed because webhook recordings might have different auth
      */
@@ -153,51 +190,86 @@ class WebhookRecordingAdapter {
         // Create download directory
         await fs.mkdir(this.downloadDir, { recursive: true });
 
+        // Use WebhookFileDownloader if available
+        const downloader = this.container.resolve('webhookFileDownloader');
+
         for (const file of recording.recording_files) {
             try {
                 const fileName = `${recording.id}_${file.file_type}.${file.file_extension}`;
                 const filePath = path.join(this.downloadDir, fileName);
 
-                // Download with access token if provided
-                const downloadUrl = file.download_url;
-                const headers = {};
-                
-                if (recording.download_access_token) {
-                    headers['Authorization'] = `Bearer ${recording.download_access_token}`;
+                // Use the enhanced downloader if available
+                if (downloader && typeof downloader.downloadFile === 'function') {
+                    const result = await downloader.downloadFile(file.download_url, filePath, {
+                        fileName,
+                        fileType: file.file_type,
+                        accessToken: recording.download_access_token
+                    });
+                    
+                    downloadResults.push({
+                        file_type: file.file_type,
+                        file_path: result.success ? result.path : null,
+                        file_size: result.size || file.file_size,
+                        success: result.success,
+                        error: result.error
+                    });
+                } else {
+                    // Fallback to direct download
+                    // Parse URL to check for embedded access token
+                    const urlObj = new URL(file.download_url);
+                    const hasEmbeddedToken = urlObj.searchParams.has('access_token');
+                    
+                    const headers = {
+                        'User-Agent': 'zoom-recording-processor/1.0'
+                    };
+                    
+                    // Only add Bearer token if URL doesn't have embedded token
+                    if (recording.download_access_token && !hasEmbeddedToken) {
+                        headers['Authorization'] = `Bearer ${recording.download_access_token}`;
+                    }
+
+                    this.logger.info(`Downloading webhook file: ${fileName}`);
+                    this.logger.debug(`Download URL: ${file.download_url.replace(/access_token=[^&]+/, 'access_token=***')}`);
+                    this.logger.debug(`Using Bearer token: ${!hasEmbeddedToken && !!recording.download_access_token}`);
+                    
+                    const response = await axios({
+                        method: 'GET',
+                        url: file.download_url,
+                        headers,
+                        responseType: 'stream',
+                        timeout: 300000, // 5 minutes timeout
+                        maxRedirects: 5,
+                        validateStatus: (status) => status < 500 // Accept redirects
+                    });
+
+                    const writer = fs.createWriteStream(filePath);
+                    response.data.pipe(writer);
+
+                    await new Promise((resolve, reject) => {
+                        writer.on('finish', resolve);
+                        writer.on('error', reject);
+                    });
+
+                    downloadResults.push({
+                        file_type: file.file_type,
+                        file_path: filePath,
+                        file_size: file.file_size,
+                        success: true
+                    });
+
+                    this.logger.info(`Successfully downloaded: ${fileName}`);
                 }
-
-                this.logger.info(`Downloading webhook file: ${fileName}`);
-                
-                const response = await axios({
-                    method: 'GET',
-                    url: downloadUrl,
-                    headers,
-                    responseType: 'stream',
-                    timeout: 300000 // 5 minutes timeout
-                });
-
-                const writer = fs.createWriteStream(filePath);
-                response.data.pipe(writer);
-
-                await new Promise((resolve, reject) => {
-                    writer.on('finish', resolve);
-                    writer.on('error', reject);
-                });
-
-                downloadResults.push({
-                    file_type: file.file_type,
-                    file_path: filePath,
-                    file_size: file.file_size,
-                    success: true
-                });
-
-                this.logger.info(`Successfully downloaded: ${fileName}`);
             } catch (error) {
-                this.logger.error(`Error downloading file ${file.file_type}:`, error);
+                this.logger.error(`Error downloading file ${file.file_type}:`, error.message);
+                if (error.response) {
+                    this.logger.error(`Response status: ${error.response.status}`);
+                    this.logger.error(`Response headers:`, error.response.headers);
+                }
                 downloadResults.push({
                     file_type: file.file_type,
                     success: false,
-                    error: error.message
+                    error: error.message,
+                    statusCode: error.response?.status
                 });
             }
         }

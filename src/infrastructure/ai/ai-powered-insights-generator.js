@@ -168,7 +168,7 @@ class AIPoweredInsightsGenerator {
 
         } catch (error) {
             this.logger.error(`❌ AI insights generation failed: ${error.message}`);
-            this.logger.error(`❌ AI insights error details:`, error);
+            this.logger.error(`❌ AI insights error details: ${error.message}`);
             const fallbackInsights = this.generateFallbackInsights(meetingData);
             const zoomInsights = await this.zoomInsightsExtractor.extractZoomInsights(meetingId, transcriptContent);
             const combinedInsights = await this.combineInsights(fallbackInsights, zoomInsights, meetingData);

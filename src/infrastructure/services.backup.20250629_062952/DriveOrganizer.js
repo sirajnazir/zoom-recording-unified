@@ -42,8 +42,9 @@ class DriveOrganizer {
             if (processedData.insights) {
                 // DEBUG: Log the AI insights object before creating document
                 this.logger.info(`🔍 [AI INSIGHTS DEBUG] Recording: ${recording.id}`);
-                this.logger.info(`🔍 [AI INSIGHTS DEBUG] Insights object keys: ${Object.keys(processedData.insights).join(', ')}`);
-                this.logger.info(`🔍 [AI INSIGHTS DEBUG] Insights object:`, JSON.stringify(processedData.insights, null, 2));
+                this.logger.info(`🔍 [AI INSIGHTS DEBUG] Insights object keys: [${Object.keys(processedData.insights).join(', ')}]`);
+                // DO NOT log the full insights object or JSON.stringify(processedData.insights)!
+                // This causes numbered array output in logs and is not allowed.
                 
                 insightsDoc = await this.createInsightsDocument(
                     recording,
@@ -323,7 +324,7 @@ class DriveOrganizer {
 
             return uploadedDoc;
         } catch (error) {
-            this.logger.error('Failed to create insights document:', error);
+            this.logger.error(`Failed to create insights document: ${error.message}`);
             return null;
         }
     }
@@ -594,7 +595,7 @@ class DriveOrganizer {
             // This would need to be implemented as a custom property or in a metadata file
             this.logger.info('Folder metadata prepared (not updated due to API limitations)');
         } catch (error) {
-            this.logger.warn('Failed to update folder metadata:', error);
+            this.logger.warn(`Failed to update folder metadata: ${error.message}`);
         }
     }
 

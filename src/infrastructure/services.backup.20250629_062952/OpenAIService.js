@@ -141,14 +141,7 @@ class OpenAIService {
             this.metricsCollector.histogram('openai.insights.duration', duration);
             this.metricsCollector.increment('openai.insights.success');
             
-            this.logger.info('Insights generated successfully', {
-                meetingTopic: metadata.topic,
-                duration,
-                insightsCount: {
-                    keyTopics: insights.keyTopics?.length || 0,
-                    actionItems: insights.actionItems?.length || 0
-                }
-            });
+            this.logger.info(`Insights generated successfully: meetingTopic=${metadata.topic}, duration=${duration}, keyTopics=${insights.keyTopics?.length || 0}, actionItems=${insights.actionItems?.length || 0}`);
 
             this.eventBus.emit('insights.generated', {
                 recordingId: metadata.recordingId,
@@ -158,10 +151,7 @@ class OpenAIService {
             return insights;
         } catch (error) {
             this.metricsCollector.increment('openai.insights.error');
-            this.logger.error('Failed to generate insights', { 
-                error: error.message,
-                metadata 
-            });
+            this.logger.error(`Failed to generate insights: error=${error.message}, metadata=${JSON.stringify(metadata)}`);
             throw new AIServiceError('Failed to generate insights', error);
         }
     }

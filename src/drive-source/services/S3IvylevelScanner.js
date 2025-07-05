@@ -458,6 +458,56 @@ class S3IvylevelScanner extends DriveScanner {
     return parts.join('_').toLowerCase().replace(/[^a-z0-9_]/g, '');
   }
 
+  /**
+   * Get all coach folders from the main S3-Ivylevel folder
+   */
+  async getCoachFolders(mainFolderId = null) {
+    console.log('  🔍 Discovering coach folders in main folder...');
+    
+    const folderId = mainFolderId || this.config.driveSource?.s3IvylevelFolderId;
+    console.log(`  🔍 Using folder ID: ${folderId}`);
+    
+    if (!folderId) {
+      console.error('  ❌ No folder ID provided or configured');
+      return [];
+    }
+    
+    try {
+      const response = await this.withSmartRetry(
+        () => this.drive.files.list({
+          q: `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+          fields: 'files(id,name,createdTime,modifiedTime)',
+          pageSize: 100
+        }),
+        `List coach folders in ${folderId}`
+      );
+      
+      const folders = response.data.files || [];
+      
+      // Filter for coach folders (those with "Coach" in the name or likely coach names)
+      const coachFolders = folders.filter(folder => {
+        const name = folder.name.toLowerCase();
+        return name.includes('coach') || 
+               name.includes('mentor') || 
+               name.includes('instructor') ||
+               this.isLikelyCoachName(folder.name, folder.name);
+      });
+      
+      console.log(`  ✓ Found ${coachFolders.length} coach folders out of ${folders.length} total folders`);
+      
+      return coachFolders.map(folder => ({
+        name: folder.name,
+        id: folder.id,
+        createdTime: folder.createdTime,
+        modifiedTime: folder.modifiedTime
+      }));
+      
+    } catch (error) {
+      console.error(`  ✗ Failed to get coach folders:`, error.message);
+      return [];
+    }
+  }
+
   generateReport(groups) {
     super.generateReport(groups);
     

@@ -24,11 +24,7 @@ class InsightsGenerator {
         const startTime = Date.now();
         
         try {
-            this.logger.info('Generating comprehensive insights', {
-                recordingId: recording.id,
-                sessionId: session.id,
-                transcriptLength: transcript?.content?.length || 0
-            });
+            this.logger.info(`Generating comprehensive insights: recordingId=${recording.id}, sessionId=${session.id}, transcriptLength=${transcript?.content?.length || 0}`);
             
             // Emit start event
             this.eventBus.emit('insights.generation.started', { 
@@ -98,11 +94,7 @@ class InsightsGenerator {
         } catch (error) {
             this.metrics.recordInsightsGeneration(Date.now() - startTime, 'failure');
             
-            this.logger.error('Insights generation failed', { 
-                error,
-                recordingId: recording.id,
-                sessionId: session.id 
-            });
+            this.logger.error(`Insights generation failed: error=${error.message}, recordingId=${recording.id}, sessionId=${session.id}`);
             
             this.eventBus.emit('insights.generation.failed', { 
                 recordingId: recording.id,
@@ -116,10 +108,7 @@ class InsightsGenerator {
 
     async _generateAIInsights(transcript, session) {
         if (!transcript?.content || session.isRuleBased()) {
-            this.logger.info('Skipping AI insights', {
-                hasTranscript: !!transcript?.content,
-                isRuleBased: session.isRuleBased()
-            });
+            this.logger.info(`Skipping AI insights: hasTranscript=${!!transcript?.content}, isRuleBased=${session.isRuleBased()}`);
             return null;
         }
         
@@ -140,7 +129,7 @@ class InsightsGenerator {
             return this._transformAIInsights(aiInsights);
             
         } catch (error) {
-            this.logger.warn('AI insights generation failed, continuing without', { error });
+            this.logger.warn(`AI insights generation failed, continuing without: ${error.message}`);
             return null;
         }
     }
@@ -185,7 +174,7 @@ class InsightsGenerator {
             return this._transformZoomData(meetingDetails);
             
         } catch (error) {
-            this.logger.warn('Zoom insights extraction failed, continuing without', { error });
+            this.logger.warn(`Zoom insights extraction failed, continuing without: ${error.message}`);
             return null;
         }
     }

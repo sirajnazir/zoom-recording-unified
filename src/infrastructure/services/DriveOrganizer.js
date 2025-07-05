@@ -35,11 +35,20 @@ class DriveOrganizer {
             // Upload files if available
             let uploadedFiles = {};
             if (processedData.files) {
-                uploadedFiles = await this.uploadRecordingFiles(
-                    recording,
-                    processedData.files,
-                    primarySessionFolder
-                );
+                // Check if this is a Drive import (use shortcuts instead of uploads)
+                if (processedData.isDriveImport) {
+                    uploadedFiles = await this.createRecordingShortcuts(
+                        recording,
+                        processedData.files,
+                        primarySessionFolder
+                    );
+                } else {
+                    uploadedFiles = await this.uploadRecordingFiles(
+                        recording,
+                        processedData.files,
+                        primarySessionFolder
+                    );
+                }
             }
 
             // Create and upload insights document
@@ -47,8 +56,8 @@ class DriveOrganizer {
             if (processedData.insights) {
                 // DEBUG: Log the AI insights object before creating document
                 this.logger.info(`🔍 [AI INSIGHTS DEBUG] Recording: ${recording.id}`);
-                this.logger.info(`🔍 [AI INSIGHTS DEBUG] Insights object keys: ${Object.keys(processedData.insights).join(', ')}`);
-                this.logger.info(`🔍 [AI INSIGHTS DEBUG] Insights object:`, JSON.stringify(processedData.insights, null, 2));
+                this.logger.info(`🔍 [AI INSIGHTS DEBUG] Insights object keys: [${Object.keys(processedData.insights).join(', ')}]`);
+                // Removed large object logging to prevent numbered array output
                 
                 insightsDoc = await this.createInsightsDocument(
                     recording,
@@ -125,6 +134,8 @@ class DriveOrganizer {
                 structure.root = this.config.google.drive.miscFolderId;
                 break;
             case 'Coaching':
+            case 'GamePlan':
+            case 'Coaching_GamePlan':
                 // Determine if student or coach folder based on participants
                 const participantType = await this.determineParticipantType(recording, processedData);
                 if (participantType === 'student') {
@@ -165,12 +176,13 @@ class DriveOrganizer {
         }
         structure.session = sessionName;
 
-        // Set up dual access paths only for Coaching sessions
-        if (category === 'Coaching' && processedData.nameAnalysis?.components) {
+        // Set up dual access paths for Coaching and GamePlan sessions
+        if ((category === 'Coaching' || category === 'GamePlan' || category === 'Coaching_GamePlan') && 
+            processedData.nameAnalysis?.components) {
             const { student, coach } = processedData.nameAnalysis.components;
             
             // Student path: Root → Students → Student → Session
-            if (student && student !== 'Unknown' && student !== 'unknown') {
+            if (student && student !== 'Unknown' && student !== 'unknown' && student !== 'Duan') {
                 // Ensure we use first name only for consistent folder naming
                 const studentFirstName = student.split(' ')[0];
                 structure.studentPath = {
@@ -181,7 +193,8 @@ class DriveOrganizer {
             }
             
             // Coach path: Root → Coaches → Coach → Student → Session
-            if (coach && coach !== 'Unknown' && coach !== 'unknown' && student && student !== 'Unknown' && student !== 'unknown') {
+            if (coach && coach !== 'Unknown' && coach !== 'unknown' && 
+                student && student !== 'Unknown' && student !== 'unknown' && student !== 'Duan') {
                 // Ensure we use first names only for consistent folder naming
                 const coachFirstName = coach.split(' ')[0];
                 const studentFirstName = student.split(' ')[0];
@@ -194,15 +207,7 @@ class DriveOrganizer {
             }
         }
 
-        this.logger.info(`📁 Drive: Folder structure determined:`, {
-            category,
-            root: structure.root ? 'configured' : 'not configured',
-            program: structure.program || 'none',
-            participant: structure.participant || 'none',
-            session: structure.session,
-            hasStudentPath: !!structure.studentPath,
-            hasCoachPath: !!structure.coachPath
-        });
+        this.logger.info(`📁 Drive: Folder structure determined: category=${category}, root=${structure.root ? 'configured' : 'not configured'}, program=${structure.program || 'none'}, participant=${structure.participant || 'none'}, session=${structure.session}, hasStudentPath=${!!structure.studentPath}, hasCoachPath=${!!structure.coachPath}`);
 
         return structure;
     }
@@ -325,8 +330,8 @@ class DriveOrganizer {
         // Create shortcuts to the primary folder instead of duplicate folders
         if (structure.studentPath && structure.coachPath) {
             this.logger.info(`📁 Drive: Both studentPath and coachPath exist - creating shortcuts for dual access`);
-            this.logger.info(`📁 Drive: Student path:`, structure.studentPath);
-            this.logger.info(`📁 Drive: Coach path:`, structure.coachPath);
+                    this.logger.info(`📁 Drive: Student path: ${JSON.stringify(structure.studentPath)}`);
+        this.logger.info(`📁 Drive: Coach path: ${JSON.stringify(structure.coachPath)}`);
             
             // Create coach path structure and add shortcut to primary folder
             this.logger.info(`📁 Drive: Calling createCoachShortcut...`);
@@ -430,14 +435,9 @@ class DriveOrganizer {
                 });
 
                 uploadedFiles[type] = uploadedFile;
-                this.logger.info(`File uploaded successfully`, {
-                    fileId: uploadedFile.id,
-                    fileName: standardizedFileName,
-                    uploadTime: Date.now(),
-                    fileSize: uploadedFile.size || 'unknown'
-                });
+                this.logger.info(`File uploaded successfully: fileId=${uploadedFile.id}, fileName=${standardizedFileName}, uploadTime=${Date.now()}, fileSize=${uploadedFile.size || 'unknown'}`);
             } catch (error) {
-                this.logger.error(`Failed to upload ${type}:`, error);
+                this.logger.error(`Failed to upload ${type}: ${error.message}`);
             }
         }
 
@@ -450,6 +450,7 @@ class DriveOrganizer {
     generateStandardizedFileName(folderName, fileType) {
         const fileTypeSuffixes = {
             video: 'mp4',
+            galleryVideo: 'gallery.mp4',
             audio: 'm4a',
             transcript: 'vtt',
             timeline: 'json',
@@ -459,10 +460,17 @@ class DriveOrganizer {
             summary: 'txt',
             highlights: 'json',
             actionItems: 'json',
-            coachingNotes: 'json'
+            coachingNotes: 'json',
+            // Add more known types
+            text: 'txt',
+            metadata: 'json',
+            other: 'txt'
         };
 
         const suffix = fileTypeSuffixes[fileType] || 'txt';
+        if (fileType === 'galleryVideo') {
+            return `${folderName}_${suffix}`;
+        }
         return `${folderName}.${suffix}`;
     }
 
@@ -495,7 +503,7 @@ class DriveOrganizer {
 
             return uploadedDoc;
         } catch (error) {
-            this.logger.error('Failed to create insights document:', error);
+            this.logger.error(`Failed to create insights document: ${error.message}`);
             return null;
         }
     }
@@ -652,7 +660,7 @@ class DriveOrganizer {
             await this.googleDriveService.updateFolderMetadata(folder.id, metadata);
             this.logger.info(`📁 Drive: Updated folder metadata for ${folder.id}`);
         } catch (error) {
-            this.logger.warn(`📁 Drive: Failed to update folder metadata:`, error.message);
+            this.logger.warn(`📁 Drive: Failed to update folder metadata: ${error.message}`);
         }
     }
 
@@ -679,16 +687,8 @@ class DriveOrganizer {
      */
     async createCoachShortcut(coachPath, primarySessionFolder) {
         this.logger.info(`📁 Drive: ===== STARTING COACH SHORTCUT CREATION =====`);
-        this.logger.info(`📁 Drive: Coach path structure:`, {
-            root: coachPath.root,
-            participant: coachPath.participant,
-            subfolder: coachPath.subfolder,
-            session: coachPath.session
-        });
-        this.logger.info(`📁 Drive: Primary session folder:`, {
-            id: primarySessionFolder.id,
-            name: primarySessionFolder.name
-        });
+        this.logger.info(`📁 Drive: Coach path structure: root=${coachPath.root}, participant=${coachPath.participant}, subfolder=${coachPath.subfolder}, session=${coachPath.session}`);
+        this.logger.info(`📁 Drive: Primary session folder: id=${primarySessionFolder.id}, name=${primarySessionFolder.name}`);
         
         const folders = {};
 
@@ -717,11 +717,7 @@ class DriveOrganizer {
 
         // Create a shortcut to the primary session folder instead of a duplicate folder
         this.logger.info(`📁 Drive: Creating shortcut to primary session folder: ${coachPath.session}`);
-        this.logger.info(`📁 Drive: Shortcut parameters:`, {
-            targetFolderId: primarySessionFolder.id,
-            parentFolderId: parentId,
-            shortcutName: coachPath.session
-        });
+        this.logger.info(`📁 Drive: Shortcut parameters: targetFolderId=${primarySessionFolder.id}, parentFolderId=${parentId}, shortcutName=${coachPath.session}`);
         
         const shortcut = await this.createGoogleDriveShortcut(
             primarySessionFolder.id,
@@ -731,11 +727,7 @@ class DriveOrganizer {
         folders.shortcut = shortcut;
         
         this.logger.info(`📁 Drive: ===== COACH SHORTCUT CREATION COMPLETED =====`);
-        this.logger.info(`📁 Drive: Final folder structure:`, {
-            coachFolder: folders.coachFolder?.id,
-            studentSubfolder: folders.studentSubfolder?.id,
-            shortcut: folders.shortcut?.id
-        });
+        this.logger.info(`📁 Drive: Final folder structure: coachFolder=${folders.coachFolder?.id}, studentSubfolder=${folders.studentSubfolder?.id}, shortcut=${folders.shortcut?.id}`);
 
         return folders;
     }
@@ -759,26 +751,15 @@ class DriveOrganizer {
                 );
                 
                 this.logger.info(`📁 Drive: Google Drive shortcut created successfully: ${shortcut.id}`);
-                this.logger.info(`📁 Drive: Shortcut details:`, {
-                    id: shortcut.id,
-                    name: shortcut.name,
-                    webViewLink: shortcut.webViewLink,
-                    targetId: shortcut.shortcutDetails?.targetId
-                });
+                this.logger.info(`📁 Drive: Shortcut details: id=${shortcut.id}, name=${shortcut.name}, webViewLink=${shortcut.webViewLink}, targetId=${shortcut.shortcutDetails?.targetId}`);
                 return shortcut;
             } else {
                 this.logger.warn(`📁 Drive: GoogleDriveService doesn't have createShortcut method, using fallback`);
                 return await this.createShortcutFile(parentFolderId, targetFolderId, shortcutName);
             }
         } catch (error) {
-            this.logger.error(`📁 Drive: Failed to create Google Drive shortcut:`, error);
-            this.logger.error(`📁 Drive: Error details:`, {
-                message: error.message,
-                stack: error.stack,
-                targetFolderId,
-                parentFolderId,
-                shortcutName
-            });
+            this.logger.error(`📁 Drive: Failed to create Google Drive shortcut: ${error.message}`);
+            this.logger.error(`📁 Drive: Error details: message=${error.message}, targetFolderId=${targetFolderId}, parentFolderId=${parentFolderId}, shortcutName=${shortcutName}`);
             
             // Fallback: create a markdown file with the folder link
             this.logger.info(`📁 Drive: Falling back to file shortcut creation`);
@@ -811,9 +792,139 @@ class DriveOrganizer {
             this.logger.info(`📁 Drive: Created shortcut file: ${uploadedFile.id}`);
             return uploadedFile;
         } catch (error) {
-            this.logger.error(`📁 Drive: Failed to create shortcut file:`, error);
+            this.logger.error(`📁 Drive: Failed to create shortcut file: ${error.message}`);
             throw error;
         }
+    }
+
+    /**
+     * Create shortcuts for Drive import files instead of uploading
+     */
+    async createRecordingShortcuts(recording, files, sessionFolder) {
+        const uploadedFiles = {};
+        const uploadedTypes = new Set();
+
+        this.logger.info(`[DEBUG] Creating shortcuts for Drive import recording: ${recording.id}`);
+        
+        // Get the standardized folder name to use as base for file names
+        const folderName = sessionFolder.name;
+        this.logger.info(`[DEBUG] Using folder name as base for file naming: ${folderName}`);
+
+        // Create shortcuts for each file type
+        for (const [type, fileId] of Object.entries(files)) {
+            if (!fileId || typeof fileId !== 'string') continue;
+            if (uploadedTypes.has(type)) {
+                this.logger.warn(`Duplicate shortcut attempt for file type: ${type} in recording: ${recording.id}`);
+                continue;
+            }
+            uploadedTypes.add(type);
+
+            try {
+                // Find the original file info
+                let originalFileName;
+                if (recording.recording_files) {
+                    const originalFile = recording.recording_files.find(f => 
+                        f.file_type && f.file_type.toLowerCase().includes(type.toLowerCase())
+                    );
+                    originalFileName = originalFile?.file_name;
+                }
+                
+                // If we can't find the original name, try to get it from session files
+                if (!originalFileName && recording._sessionFiles) {
+                    const sessionFile = recording._sessionFiles.find(f => f.id === fileId);
+                    originalFileName = sessionFile?.name;
+                }
+                
+                // Generate standardized file name
+                let standardizedFileName;
+                if (type.startsWith('file_')) {
+                    // For unknown/other files, preserve original name with folder prefix
+                    if (originalFileName) {
+                        // Extract just the extension and any meaningful suffix
+                        const lastDot = originalFileName.lastIndexOf('.');
+                        const ext = lastDot > -1 ? originalFileName.substring(lastDot) : '';
+                        
+                        // Check if there's a meaningful suffix before the extension
+                        const baseName = lastDot > -1 ? originalFileName.substring(0, lastDot) : originalFileName;
+                        const lowerBase = baseName.toLowerCase();
+                        
+                        // Preserve meaningful suffixes like 'newChat', 'transcript', etc.
+                        if (lowerBase.includes('chat') || lowerBase.includes('transcript') || 
+                            lowerBase.includes('caption') || lowerBase.includes('note')) {
+                            // Extract the suffix part after GMT timestamp if present
+                            const gmtMatch = baseName.match(/GMT\d{8}-\d{6}_(.*)/i);
+                            if (gmtMatch && gmtMatch[1]) {
+                                standardizedFileName = `${folderName}_${gmtMatch[1]}${ext}`;
+                            } else {
+                                // Use original name if it has meaningful content
+                                standardizedFileName = originalFileName;
+                            }
+                        } else {
+                            standardizedFileName = `${folderName}${ext}`;
+                        }
+                    } else {
+                        standardizedFileName = `${folderName}_${type.replace('file_', '')}`;
+                    }
+                } else {
+                    standardizedFileName = this.generateStandardizedFileName(folderName, type);
+                }
+
+                this.logger.info(`[DEBUG] Creating shortcut for ${type}:`);
+                this.logger.info(`   Original: ${originalFileName || 'unknown'} -> Standardized: ${standardizedFileName}`);
+                
+                try {
+                    // Create a shortcut to the original file
+                    const shortcut = await this.googleDriveService.createShortcut(
+                        fileId,
+                        sessionFolder.id,
+                        standardizedFileName
+                    );
+                    
+                    uploadedFiles[type] = {
+                        id: shortcut.id,
+                        name: standardizedFileName,
+                        webViewLink: shortcut.webViewLink,
+                        originalName: originalFileName
+                    };
+                    
+                    this.logger.info(`✅ Shortcut created successfully: ${standardizedFileName}`);
+                } catch (shortcutError) {
+                    this.logger.error(`❌ Shortcut creation failed for ${type}: ${shortcutError.message}`);
+                    this.logger.error(`   Context: fileId=${fileId}, standardizedName=${standardizedFileName}`);
+                    // Continue without shortcut for this file
+                }
+            } catch (error) {
+                this.logger.error(`Failed to process file ${type}: ${error.message}`);
+                this.logger.error(`   Context: fileId=${fileId}, type=${type}`);
+            }
+        }
+
+        // Log shortcut creation summary
+        const successCount = Object.keys(uploadedFiles).length;
+        const totalCount = Object.keys(files).length;
+        this.logger.info(`📊 Shortcut creation summary: ${successCount}/${totalCount} successful`);
+        if (successCount < totalCount) {
+            this.logger.warn(`   Failed types: ${Object.keys(files).filter(k => !uploadedFiles[k]).join(', ')}`);
+        }
+        
+        return uploadedFiles;
+    }
+
+    /**
+     * Get file extension based on type
+     */
+    getFileExtension(type) {
+        const extensions = {
+            video: 'mp4',
+            galleryVideo: 'mp4',
+            audio: 'm4a',
+            transcript: 'vtt',
+            chat: 'txt',
+            metadata: 'json',
+            text: 'txt',
+            json: 'json'
+        };
+        return extensions[type] || 'bin';
     }
 }
 

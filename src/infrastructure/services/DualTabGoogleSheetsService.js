@@ -315,6 +315,12 @@ class DualTabGoogleSheetsService {
      * Update Tab 1: Raw Master Index with original recording data
      */
     async _updateRawTab(originalRecording, source) {
+        // Ensure initialization is complete
+        if (!this.sheets) {
+            this.logger.info('Sheets service not initialized in _updateRawTab, initializing now...');
+            await this._initialize();
+        }
+        
         // Extract processed data from the processor's structure
         const processedData = originalRecording.processed || {};
         
@@ -368,6 +374,12 @@ class DualTabGoogleSheetsService {
      * Update Tab 2: Standardized Master Index with smart schema data
      */
     async _updateStandardizedTab(smartData) {
+        // Ensure initialization is complete
+        if (!this.sheets) {
+            this.logger.info('Sheets service not initialized in _updateStandardizedTab, initializing now...');
+            await this._initialize();
+        }
+        
         const rowData = this._prepareStandardizedRowData(smartData);
         
         await this.sheets.spreadsheets.values.append({
@@ -1645,10 +1657,18 @@ class DualTabGoogleSheetsService {
             return uuid;
         }
         
+        // Check if this looks like a hex UUID (32 chars after removing dashes)
+        const cleanUuid = uuid.replace(/-/g, '');
+        const isHexUuid = /^[0-9a-fA-F]{32}$/.test(cleanUuid);
+        
+        if (!isHexUuid) {
+            // Not a hex UUID - likely from Drive import or test
+            // Just return the original ID
+            console.log('   Non-hex UUID, using as-is:', uuid);
+            return uuid;
+        }
+        
         try {
-            // Remove dashes if present
-            const cleanUuid = uuid.replace(/-/g, '');
-            
             // Convert hex to buffer
             const buffer = Buffer.from(cleanUuid, 'hex');
             

@@ -189,7 +189,7 @@ class TranscriptionAnalyzer {
                 const fullText = segments.map(s => s.text).join(' ');
                 aiInsights = await this.openAIService.generateInsights(fullText, metadata);
             } catch (error) {
-                logger.warn('AI insights generation failed:', error);
+                logger.warn(`AI insights generation failed: ${error.message}`);
             }
         }
         

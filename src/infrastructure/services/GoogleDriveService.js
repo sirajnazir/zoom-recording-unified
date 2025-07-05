@@ -144,12 +144,14 @@ class GoogleDriveService {
                     attempt
                 });
 
-                this.eventBus.emit('drive.file.uploaded', {
-                    fileId: response.data.id,
-                    metadata,
-                    uploadTime,
-                    fileSize
-                });
+                if (this.eventBus) {
+                    this.eventBus.emit('drive.file.uploaded', {
+                        fileId: response.data.id,
+                        metadata,
+                        uploadTime,
+                        fileSize
+                    });
+                }
 
                 return response.data;
             } catch (error) {

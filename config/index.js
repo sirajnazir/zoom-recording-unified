@@ -3,7 +3,24 @@ require('dotenv').config();
 
 // Parse Google Service Account JSON if provided
 let parsedGoogleCredentials = null;
-if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+
+// First try to decode base64 service account key
+if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    try {
+        // Remove any line breaks or spaces from the base64 string
+        const cleanedKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY.replace(/\s+/g, '');
+        const decodedKey = Buffer.from(cleanedKey, 'base64').toString('utf-8');
+        parsedGoogleCredentials = JSON.parse(decodedKey);
+        console.log('✅ Decoded Google Service Account Key successfully');
+        console.log('   Client Email:', parsedGoogleCredentials.client_email ? '✓ Found' : '✗ Missing');
+        console.log('   Private Key:', parsedGoogleCredentials.private_key ? '✓ Found' : '✗ Missing');
+    } catch (error) {
+        console.error('❌ Failed to decode GOOGLE_SERVICE_ACCOUNT_KEY:', error.message);
+    }
+}
+
+// Fallback to direct JSON if provided
+if (!parsedGoogleCredentials && process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
     try {
         parsedGoogleCredentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
         console.log('✅ Parsed Google Service Account JSON successfully');
@@ -34,7 +51,7 @@ const config = {
     google: {
         // Service account credentials - extract from JSON or use individual env vars
         clientEmail: parsedGoogleCredentials?.client_email || process.env.GOOGLE_CLIENT_EMAIL,
-        privateKey: parsedGoogleCredentials?.private_key || process.env.GOOGLE_PRIVATE_KEY,
+        privateKey: parsedGoogleCredentials?.private_key || process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
         serviceAccountKey: process.env.GOOGLE_SERVICE_ACCOUNT_KEY,
         serviceAccountJson: parsedGoogleCredentials,
         // OAuth2 credentials (base64 encoded, fallback)
@@ -92,7 +109,40 @@ const config = {
         enableDriveUpload: process.env.ENABLE_DRIVE_UPLOAD !== 'false',
         enableSheetsTracking: process.env.ENABLE_SHEETS_TRACKING !== 'false',
         enableNotifications: process.env.ENABLE_NOTIFICATIONS === 'true',
-        enableAutoRetry: process.env.ENABLE_AUTO_RETRY !== 'false'
+        enableAutoRetry: process.env.ENABLE_AUTO_RETRY !== 'false',
+        enableDriveSource: process.env.ENABLE_DRIVE_SOURCE === 'true'
+    },
+    
+    // Drive source configuration (NEW - doesn't affect existing functionality)
+    driveSource: {
+        enabled: process.env.ENABLE_DRIVE_SOURCE === 'true',
+        s3IvylevelFolderId: process.env.S3_IVYLEVEL_FOLDER_ID || '1Dpq3rSZelQJJePkSi7K6xAY4q62xMiFA',
+        
+        // Known coach folders for quick access
+        coachFolders: {
+            'Jenny': process.env.JENNY_FOLDER_ID || '1hlwz3XSGz53Q1OPmVHAzLf4-46CAmh40',
+            'Alan': process.env.ALAN_FOLDER_ID || '1ZPlXd04BoKwVNjfXP5oTZTzhIVNO7hnV',
+            'Juli': process.env.JULI_FOLDER_ID || '1Qd-fcahIti7Xs-wtVgfnHKsE9qp4v_uD',
+            'Andrew': process.env.ANDREW_FOLDER_ID || '18RQk0cgJGQJHoovcsStfXoUJmFrJajzH'
+        },
+        
+        scanOptions: {
+            maxDepth: parseInt(process.env.DRIVE_SCAN_MAX_DEPTH || '5'),
+            minFileSize: parseInt(process.env.DRIVE_MIN_FILE_SIZE || '102400'), // 100KB
+            batchSize: parseInt(process.env.DRIVE_BATCH_SIZE || '10')
+        },
+        
+        // Use test folders if configured
+        useTestFolders: process.env.USE_DRIVE_TEST_FOLDERS === 'true',
+        testFolders: {
+            recordingsRootFolderId: process.env.DRIVE_SOURCE_RECORDINGS_ROOT,
+            coachesFolderId: process.env.DRIVE_SOURCE_COACHES_FOLDER,
+            studentsFolderId: process.env.DRIVE_SOURCE_STUDENTS_FOLDER,
+            miscFolderId: process.env.DRIVE_SOURCE_MISC_FOLDER,
+            trivialFolderId: process.env.DRIVE_SOURCE_TRIVIAL_FOLDER
+        },
+        
+        testSheetId: process.env.DRIVE_SOURCE_TEST_SHEET
     }
 };
 
@@ -125,22 +175,23 @@ function validateConfig() {
     }
     
     if (missing.length > 0) {
-        console.error('Missing required configuration:', missing.join(', '));
+        console.log('Configuration validation status:', missing.join(', '));
         
         // Additional debugging for Google credentials
         if (missing.includes('google.clientEmail') || missing.includes('google.privateKey')) {
-            console.error('Google Auth Debug:');
-            console.error('  GOOGLE_SERVICE_ACCOUNT_JSON exists:', !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-            console.error('  Parsed successfully:', !!parsedGoogleCredentials);
+            console.log('Google Auth Debug:');
+            console.log('  GOOGLE_SERVICE_ACCOUNT_KEY exists:', !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+            console.log('  GOOGLE_SERVICE_ACCOUNT_JSON exists:', !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+            console.log('  Parsed successfully:', !!parsedGoogleCredentials);
             if (parsedGoogleCredentials) {
-                console.error('  Has client_email:', !!parsedGoogleCredentials.client_email);
-                console.error('  Has private_key:', !!parsedGoogleCredentials.private_key);
+                console.log('  Has client_email:', !!parsedGoogleCredentials.client_email);
+                console.log('  Has private_key:', !!parsedGoogleCredentials.private_key);
             }
         }
         
-        // Don't throw in production, just warn
-        if (process.env.NODE_ENV === 'production') {
-            console.warn('⚠️  Configuration incomplete but continuing...');
+        // Don't block execution, just warn
+        if (missing.length > 0 && !missing.includes('google.clientEmail') && !missing.includes('google.privateKey')) {
+            console.warn('⚠️  Some configuration missing but Google credentials are available');
         }
     }
 }

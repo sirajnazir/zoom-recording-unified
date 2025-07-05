@@ -54,9 +54,7 @@ class OpenAIService {
     async testConnection() {
         try {
             const response = await this.openai.models.list();
-            this.logger.info('OpenAI connection test successful', {
-                modelsAvailable: response.data.length
-            });
+            this.logger.info(`OpenAI connection test successful: modelsAvailable=${response.data.length}`);
             return true;
         } catch (error) {
             throw new AIServiceError('Failed to connect to OpenAI', error);
@@ -80,19 +78,12 @@ class OpenAIService {
             this.metricsCollector.histogram('openai.transcription.duration', duration);
             this.metricsCollector.increment('openai.transcription.success');
             
-            this.logger.info('Transcription generated successfully', {
-                audioFile: audioFilePath,
-                duration,
-                transcriptionLength: response.text.length
-            });
+            this.logger.info(`Transcription generated successfully: audioFile=${audioFilePath}, duration=${duration}, transcriptionLength=${response.text.length}`);
 
             return response.text;
         } catch (error) {
             this.metricsCollector.increment('openai.transcription.error');
-            this.logger.error('Failed to generate transcription', { 
-                audioFile: audioFilePath, 
-                error: error.message 
-            });
+            this.logger.error(`Failed to generate transcription: audioFile=${audioFilePath}, error=${error.message}`);
             throw new AIServiceError('Failed to generate transcription', error);
         }
     }
@@ -141,14 +132,7 @@ class OpenAIService {
             this.metricsCollector.histogram('openai.insights.duration', duration);
             this.metricsCollector.increment('openai.insights.success');
             
-            this.logger.info('Insights generated successfully', {
-                meetingTopic: metadata.topic,
-                duration,
-                insightsCount: {
-                    keyTopics: insights.keyTopics?.length || 0,
-                    actionItems: insights.actionItems?.length || 0
-                }
-            });
+            this.logger.info(`Insights generated successfully: meetingTopic=${metadata.topic}, duration=${duration}, keyTopics=${insights.keyTopics?.length || 0}, actionItems=${insights.actionItems?.length || 0}`);
 
             this.eventBus.emit('insights.generated', {
                 recordingId: metadata.recordingId,
@@ -158,10 +142,7 @@ class OpenAIService {
             return insights;
         } catch (error) {
             this.metricsCollector.increment('openai.insights.error');
-            this.logger.error('Failed to generate insights', { 
-                error: error.message,
-                metadata 
-            });
+            this.logger.error(`Failed to generate insights: error=${error.message}, metadata=${JSON.stringify(metadata)}`);
             throw new AIServiceError('Failed to generate insights', error);
         }
     }
@@ -188,7 +169,7 @@ class OpenAIService {
 
             return response.choices[0].message.content.trim();
         } catch (error) {
-            this.logger.error('Failed to generate summary', { error: error.message });
+            this.logger.error(`Failed to generate summary: ${error.message}`);
             throw new AIServiceError('Failed to generate summary', error);
         }
     }
@@ -217,7 +198,7 @@ class OpenAIService {
             const result = JSON.parse(response.choices[0].message.content);
             return result.actionItems || [];
         } catch (error) {
-            this.logger.error('Failed to extract action items', { error: error.message });
+            this.logger.error(`Failed to extract action items: ${error.message}`);
             throw new AIServiceError('Failed to extract action items', error);
         }
     }

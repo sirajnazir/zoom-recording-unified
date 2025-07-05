@@ -412,8 +412,23 @@ class ProductionZoomProcessor {
         const formatLogEntry = (level, ...args) => {
             const timestamp = new Date().toISOString();
             const message = args.map(arg => {
-                if (typeof arg === 'object') {
-                    return JSON.stringify(arg, null, 2);
+                if (typeof arg === 'object' && arg !== null) {
+                    // Handle different types of objects more carefully
+                    if (arg instanceof Error) {
+                        return `${arg.name}: ${arg.message}`;
+                    } else if (Array.isArray(arg)) {
+                        return `[${arg.length} items]`;
+                    } else if (typeof arg === 'function') {
+                        return '[Function]';
+                    } else {
+                        // For regular objects, try to create a summary instead of full JSON
+                        const keys = Object.keys(arg);
+                        if (keys.length <= 3) {
+                            return JSON.stringify(arg, null, 2);
+                        } else {
+                            return `{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? `, ...${keys.length - 3} more` : ''}}`;
+                        }
+                    }
                 }
                 return String(arg);
             }).join(' ');
@@ -528,7 +543,7 @@ class ProductionZoomProcessor {
                         return module[exportName];
                     } else {
                         console.log(`   ❌ Named export '${exportName}' not found!`);
-                        console.log(`   → Available exports:`, Object.keys(module));
+                        console.log(`   → Available exports: [${Object.keys(module).join(', ')}]`);
                         throw new Error(`Export '${exportName}' not found in ${modulePath}`);
                     }
                 } else {
@@ -540,7 +555,7 @@ class ProductionZoomProcessor {
                         console.log(`   → Using module directly`);
                         return module;
                     } else {
-                        console.log(`   → Module exports:`, Object.keys(module));
+                        console.log(`   → Module exports: [${Object.keys(module).join(', ')}]`);
                         return module;
                     }
                 }
@@ -659,6 +674,9 @@ class ProductionZoomProcessor {
         // ========== INFRASTRUCTURE SERVICES ==========
         console.log('\n🔧 Loading Infrastructure Services...\n');
         
+        // Webhook services
+        console.log('Loading webhookFileDownloader...');
+        
         // Core services (required)
         container.register({
             zoomService: asClass(require('./src/infrastructure/services/ZoomService').ZoomService).singleton(),
@@ -666,8 +684,13 @@ class ProductionZoomProcessor {
             
             // Data services
             knowledgeBaseService: asClass(require('./src/infrastructure/services/KnowledgeBaseService')).singleton(),
-            knowledgeBase: aliasTo('knowledgeBaseService')
+            knowledgeBase: aliasTo('knowledgeBaseService'),
+            
+            // Webhook services
+            webhookFileDownloader: asClass(require('./src/services/WebhookFileDownloader')).singleton()
         });
+        
+        console.log('✅ webhookFileDownloader registered successfully');
 
         // Smart services - MUST be registered before GoogleSheetsService
         const csnsClass = require('./src/infrastructure/services/CompleteSmartNameStandardizer').CompleteSmartNameStandardizer;
@@ -1136,7 +1159,7 @@ class ProductionZoomProcessor {
                             console.log(`   Success: ${downloadResult.success}`);
                             console.log(`   Files keys: ${Object.keys(downloadResult.files || {}).join(', ')}`);
                             console.log(`   Transcript path: ${downloadedFiles.transcript}`);
-                            console.log(`   All files:`, JSON.stringify(downloadResult.files, null, 2));
+                            console.log(`   All files: [${Object.keys(downloadResult.files || {}).join(', ')}]`);
                             
                             // FIX: Map uppercase keys to lowercase to prevent duplicates
                             if (downloadResult.files) {
@@ -1436,10 +1459,9 @@ class ProductionZoomProcessor {
                     
                     // DEBUG: Log the AI insights object after generation and transformation
                     this.logger.info(`🔍 [AI INSIGHTS DEBUG] AI Service Response for Recording: ${recording.id}`);
-                    this.logger.info(`🔍 [AI INSIGHTS DEBUG] Raw AI Insights object keys: ${Object.keys(rawAIInsights).join(', ')}`);
-                    this.logger.info(`🔍 [AI INSIGHTS DEBUG] Transformed AI Insights object keys: ${Object.keys(aiInsights).join(', ')}`);
-                    this.logger.info(`🔍 [AI INSIGHTS DEBUG] Raw AI Insights object:`, JSON.stringify(rawAIInsights, null, 2));
-                    this.logger.info(`🔍 [AI INSIGHTS DEBUG] Transformed AI Insights object:`, JSON.stringify(aiInsights, null, 2));
+                    this.logger.info(`🔍 [AI INSIGHTS DEBUG] Raw AI Insights object keys: [${Object.keys(rawAIInsights).join(', ')}]`);
+                    this.logger.info(`🔍 [AI INSIGHTS DEBUG] Transformed AI Insights object keys: [${Object.keys(aiInsights).join(', ')}]`);
+                    // Removed large object logging to prevent numbered array output
                     
                     this.logger.info('✅ AI insights generated and transformed');
                 } catch (error) {
@@ -1936,7 +1958,7 @@ class ProductionZoomProcessor {
             // DEBUG: End of recording processing
             console.log('==============================');
             console.log(`✅ [DEBUG] END Processing Recording: ${recording.id} (UUID: ${recording.uuid})`);
-            console.log(`   Final downloadedFiles:`, JSON.stringify(downloadedFiles, null, 2));
+                            console.log(`   Final downloadedFiles: [${Object.keys(downloadedFiles).join(', ')}]`);
             console.log(`   Final transcriptContent length: ${transcriptContent.length}`);
             if (transcriptContent.length > 0) {
                 console.log(`   Final transcript preview: ${transcriptContent.substring(0, 200)}`);
@@ -1966,7 +1988,7 @@ class ProductionZoomProcessor {
                     });
                     
                     console.log('📁 DEBUG: driveOrganizer.organizeRecording completed successfully');
-                    console.log('📁 DEBUG: driveResult:', JSON.stringify(driveResult, null, 2));
+                    console.log('📁 DEBUG: driveResult:', driveResult ? `{${Object.keys(driveResult).join(', ')}}` : 'null');
                     
                     driveFolderId = driveResult.folderId;
                     driveLink = driveResult.folderLink;
@@ -2153,12 +2175,7 @@ class ProductionZoomProcessor {
                     if (googleSheetsService) {
                         // Convert UUID to different formats for matching
                         const uuidFormats = this._convertUuidFormats(originalUuid);
-                        console.log(`🔍 [GATE 3] UUID formats for matching:`, {
-                            original: uuidFormats.original,
-                            base64: uuidFormats.base64,
-                            hex: uuidFormats.hex,
-                            hexWithDashes: uuidFormats.hexWithDashes
-                        });
+                        console.log(`🔍 [GATE 3] UUID formats for matching: [original, base64, hex, hexWithDashes]`);
                         
                         // Try to find existing recording using all UUID formats
                         let existingCheck = { exists: false, recording: null };
@@ -2231,9 +2248,9 @@ class ProductionZoomProcessor {
                 }
                 
                 // Preserve original base64 UUID from Zoom (don't overwrite with hex UUID)
-                const existingUuid = recording.uuid || recording.id;
+                const recordingUuid = recording.uuid || recording.id;
                 if (!recording.uuid) {
-                    recording.uuid = existingUuid; // Use original if no UUID exists
+                    recording.uuid = recordingUuid; // Use original if no UUID exists
                 }
                 recording.fingerprint = this._generateFingerprint(recording.id, recording.start_time);
                 console.log(`🔑 Using ORIGINAL UUID from Zoom: ${recording.uuid}`);
@@ -3704,7 +3721,7 @@ async function main() {
         
         // Debug: Show what options were parsed
         console.log('\n🔍 DEBUG: Command line options parsed:');
-        console.log('   Raw options object:', JSON.stringify(options, null, 2));
+        console.log('   Raw options object:', `{${Object.keys(options).join(', ')}}`);
         
         // Use command line options
         const processingOptions = {
@@ -3721,7 +3738,7 @@ async function main() {
         };
         
         console.log('\n🔍 DEBUG: Processing options being passed:');
-        console.log('   Processing options:', JSON.stringify(processingOptions, null, 2));
+        console.log('   Processing options:', `{${Object.keys(processingOptions).join(', ')}}`);
         
         console.log(`\n🎯 Processing Configuration:`);
         console.log(`   Mode: ${processingOptions.mode}`);

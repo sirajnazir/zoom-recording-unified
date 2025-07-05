@@ -36,7 +36,9 @@ class DriveScanner {
       /\.srt$/i,
       /transcript/i,
       /chat/i,
-      /audio.*only/i
+      /audio.*only/i,
+      /GMT\d{8}-\d{6}/i,  // GMT timestamp pattern
+      /Recording/i        // Generic recording pattern
     ];
     this.fileTypeMap = {
       video: ['.mp4', '.mov', '.avi', '.mkv', '.webm'],
@@ -174,7 +176,7 @@ class DriveScanner {
           } else if (this.isPotentialRecording(file, includePatterns, minFileSize)) {
             const enrichedFile = this.enrichFileMetadata(file, folderId, folderInfo.name);
             recordings.push(enrichedFile);
-            console.log(`Found potential recording: ${file.name} (confidence: ${enrichedFile.confidence}%)`);
+            console.log(`Found potential recording: ${file.name} (type: ${enrichedFile.fileType}, confidence: ${enrichedFile.confidence}%)`);
           }
         }
 
@@ -190,6 +192,7 @@ class DriveScanner {
 
     } catch (error) {
       console.error('Error scanning folder:', error);
+      console.log(`   Context: folder=${folderInfo.name}, id=${folderId}, depth=${currentDepth}`);
     }
 
     return recordings;
@@ -209,21 +212,36 @@ class DriveScanner {
   }
 
   isPotentialRecording(file, includePatterns = [], minFileSize = 0) {
-    if (file.size && parseInt(file.size) < minFileSize) {
-      return false;
-    }
-
+    // Skip size check for certain file types that might be small (like chat files)
     const fileName = file.name.toLowerCase();
-    const hasVideoOrAudio = this.fileTypeMap.video.some(ext => fileName.endsWith(ext)) ||
-                           this.fileTypeMap.audio.some(ext => fileName.endsWith(ext));
-    const hasTranscript = this.fileTypeMap.transcript.some(ext => fileName.endsWith(ext)) &&
-                         (fileName.includes('transcript') || fileName.includes('caption'));
-    const hasChat = fileName.includes('chat');
-
-    if (!hasVideoOrAudio && !hasTranscript && !hasChat) {
+    const isSmallFileType = fileName.endsWith('.txt') || fileName.endsWith('.json') || 
+                           fileName.endsWith('.vtt') || fileName.endsWith('.srt');
+    
+    if (!isSmallFileType && file.size && parseInt(file.size) < minFileSize) {
+      console.log(`⚠️  Excluded by size filter: ${file.name} (${file.size} bytes < ${minFileSize} bytes minimum)`);
       return false;
     }
 
+    // INCLUSIVE APPROACH: Include ALL files that might be part of a recording
+    // We'll let the matching algorithm group them properly
+    
+    // Exclude only system files and clearly non-recording files
+    const excludePatterns = [
+      /^\./, // Hidden files starting with .
+      /\.tmp$/i, // Temporary files
+      /\.log$/i, // Log files
+      /desktop\.ini$/i, // Windows system files
+      /\.ds_store$/i, // Mac system files
+      /thumbs\.db$/i // Windows thumbnail files
+    ];
+    
+    if (excludePatterns.some(pattern => pattern.test(file.name))) {
+      const matchedPattern = excludePatterns.find(pattern => pattern.test(file.name));
+      console.log(`⚠️  Excluded by pattern: ${file.name} matches ${matchedPattern}`);
+      return false;
+    }
+
+    // If include patterns are specified, use them
     if (includePatterns.length > 0) {
       return includePatterns.some(pattern => {
         if (pattern instanceof RegExp) {
@@ -233,7 +251,9 @@ class DriveScanner {
       });
     }
 
-    return this.knownPatterns.some(pattern => pattern.test(file.name));
+    // Otherwise, include any file that might be related to recordings
+    // This includes: videos, audio, transcripts, chat, json, or anything with GMT timestamp
+    return true; // Include everything by default!
   }
 
   enrichFileMetadata(file, parentFolderId, parentFolderName) {
@@ -258,20 +278,47 @@ class DriveScanner {
   detectFileType(fileName) {
     const lowerName = fileName.toLowerCase();
     
-    for (const [type, extensions] of Object.entries(this.fileTypeMap)) {
-      if (type === 'chat' && lowerName.includes('chat')) {
+    // Video files - check extensions (case insensitive)
+    if (lowerName.match(/\.(mp4|mov|avi|mkv|webm|m4v)$/i)) {
+      return 'video';
+    }
+    
+    // Audio files
+    if (lowerName.match(/\.(m4a|mp3|wav|aac|ogg|wma)$/i)) {
+      return 'audio';
+    }
+    
+    // Transcript files - .vtt and .srt are ALWAYS transcripts
+    if (lowerName.match(/\.vtt$/i) || lowerName.match(/\.srt$/i)) {
+      return 'transcript';
+    }
+    
+    // Chat files - anything with 'chat' in the name
+    if (lowerName.includes('chat')) {
+      return 'chat';
+    }
+    
+    // Transcript by name pattern
+    if (lowerName.includes('transcript') || lowerName.includes('caption')) {
+      return 'transcript';
+    }
+    
+    // JSON files might be metadata or settings
+    if (lowerName.endsWith('.json')) {
+      return 'metadata';
+    }
+    
+    // Text files - could be chat, notes, or other
+    if (lowerName.endsWith('.txt')) {
+      // If it has GMT timestamp, likely a chat file
+      if (lowerName.match(/gmt\d{8}-\d{6}/i)) {
         return 'chat';
       }
-      if (type === 'transcript' && 
-          (lowerName.includes('transcript') || lowerName.includes('caption')) &&
-          extensions.some(ext => lowerName.endsWith(ext))) {
-        return 'transcript';
-      }
-      if (extensions.some(ext => lowerName.endsWith(ext))) {
-        return type;
-      }
+      return 'text';
     }
-    return 'unknown';
+    
+    // Any other file type - don't exclude it!
+    return 'other';
   }
 
   extractDateFromName(name) {
