@@ -145,15 +145,21 @@ class WebhookRecordingAdapter {
     ensureValidDuration(webhookRecording) {
         const duration = webhookRecording.duration;
         
-        // If no duration, try to calculate from recording files
-        if (!duration && webhookRecording.recording_files?.length > 0) {
+        // Always try to calculate from recording files first for accuracy
+        if (webhookRecording.recording_files?.length > 0) {
             for (const file of webhookRecording.recording_files) {
                 if (file.recording_start && file.recording_end) {
                     const start = new Date(file.recording_start).getTime();
                     const end = new Date(file.recording_end).getTime();
                     const calculatedDuration = Math.floor((end - start) / 1000); // Convert to seconds
                     if (calculatedDuration > 0) {
-                        this.logger.info(`Calculated duration from recording file: ${calculatedDuration} seconds`);
+                        // Check if calculated duration significantly differs from webhook duration
+                        if (duration && Math.abs(calculatedDuration - duration) > 60) {
+                            this.logger.warn(`Duration mismatch detected! Webhook: ${duration}s, Calculated: ${calculatedDuration}s`);
+                            this.logger.info(`Using calculated duration from recording file timestamps: ${calculatedDuration} seconds`);
+                        } else {
+                            this.logger.info(`Calculated duration from recording file: ${calculatedDuration} seconds`);
+                        }
                         return calculatedDuration;
                     }
                 }

@@ -1337,11 +1337,39 @@ class ProductionZoomProcessor {
             // Store category in recording for Drive organization
             recording._category = recordingCategory;
             
+            // FIX: Update sessionType in nameAnalysis to match the final category determination
+            if (recordingCategory === 'TRIVIAL') {
+                nameAnalysis.components.sessionType = 'TRIVIAL';
+            } else if (recordingCategory === 'MISC') {
+                nameAnalysis.components.sessionType = 'MISC';
+            } else if (recordingCategory === 'STUDENTS') {
+                nameAnalysis.components.sessionType = 'Coaching';
+            } else if (recordingCategory === 'COACHES') {
+                nameAnalysis.components.sessionType = 'Coaching';
+            }
+            
+            // FIX: Regenerate standardized name with correct sessionType
+            if (nameStandardizer) {
+                const regeneratedName = nameStandardizer.buildStandardizedFolderName({
+                    coach: nameAnalysis.components?.coach || 'unknown',
+                    student: nameAnalysis.components?.student || 'Unknown',
+                    weekNumber: nameAnalysis.components?.week || null,
+                    sessionType: nameAnalysis.components?.sessionType || 'MISC',
+                    date: recording.start_time.split('T')[0],
+                    meetingId: recording.id,
+                    uuid: recording.uuid,
+                    topic: recording.topic
+                });
+                nameAnalysis.standardizedName = regeneratedName;
+                console.log(`🔧 FIX: Regenerated standardized name with correct category: ${regeneratedName}`);
+            }
+            
             console.log(`📂 Recording Category: ${recordingCategory}`);
             console.log(`   🏷️ Standardized Name: ${nameAnalysis.standardizedName}`);
             console.log(`   👥 Participants: ${extractedParticipants.length}`);
             console.log(`   ⏱️ Duration: ${recording.duration || 0} seconds`);
             console.log(`   📦 File Size: ${recording.file_size || 0} bytes`);
+            console.log(`   🔧 Session Type Updated: ${nameAnalysis.components?.sessionType}`);
             
             console.log(`🔍 DEBUG: About to start week inference...`);
             

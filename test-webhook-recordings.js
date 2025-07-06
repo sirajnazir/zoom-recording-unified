@@ -89,6 +89,44 @@ async function testWebhookRecordings() {
   console.log('  TRIVIAL threshold:', 15 * 60, 'seconds (15 minutes)');
   console.log('  Recording 1 duration:', recording1.duration, '>', 15 * 60, '?', recording1.duration > 15 * 60);
   console.log('  Recording 2 duration:', recording2.duration, '>', 15 * 60, '?', recording2.duration > 15 * 60);
+  
+  // Test Recording 3: Aditi's Recording
+  console.log('\n3️⃣ Testing: Aditi Bhaskar\'s Personal Meeting Room');
+  const recording3 = {
+    uuid: 'pP9T6kSQTjSLiMnQT9h7dA==',
+    id: '4762651206',
+    meeting_id: '4762651206',
+    topic: 'Aditi Bhaskar\'s Personal Meeting Room',
+    start_time: '2025-07-05T23:48:16Z',
+    duration: 658, // 10.97 minutes - under 15 minutes
+    host_email: 'aditi@ivymentors.co',
+    host_name: 'Aditi Bhaskar',
+    participant_count: 1,
+    total_size: 3549859 // 3.5MB - under 5MB threshold
+  };
+  
+  const result3 = await nameStandardizer.standardizeName(recording3.topic, {
+    duration: recording3.duration,
+    uuid: recording3.uuid,
+    id: recording3.id,
+    meeting_id: recording3.meeting_id,
+    start_time: recording3.start_time,
+    host_email: recording3.host_email,
+    participants: ['Aditi Bhaskar']
+  });
+  
+  console.log('Result:', result3);
+  console.log('  Standardized:', result3.standardizedName);
+  console.log('  Coach:', result3.components?.coach);
+  console.log('  Student:', result3.components?.student);
+  console.log('  Session Type:', result3.components?.sessionType);
+  console.log('  Week:', result3.components?.week);
+  console.log('  Duration:', recording3.duration, 'seconds =', (recording3.duration/60).toFixed(1), 'minutes');
+  console.log('  File Size:', recording3.total_size, 'bytes =', (recording3.total_size/1024/1024).toFixed(1), 'MB');
+  
+  // Test categorization directly
+  const category3 = categorizer.categorize(result3.components, recording3);
+  console.log('  Category:', category3);
 }
 
 // Run the test
