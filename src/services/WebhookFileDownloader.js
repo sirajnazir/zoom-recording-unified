@@ -11,7 +11,7 @@ const stream = require('stream');
 const pipeline = promisify(stream.pipeline);
 
 class WebhookFileDownloader {
-  constructor(config, logger) {
+  constructor({ config, logger }) {
     this.config = config;
     this.logger = logger || console;
     this.downloadTimeout = config.downloadTimeout || 300000; // 5 minutes

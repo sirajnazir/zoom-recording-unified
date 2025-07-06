@@ -112,7 +112,7 @@ function createContainer() {
         ...(KnowledgeBaseService && { knowledgeBaseService: awilix.asClass(KnowledgeBaseService).singleton() }),
         ...(DriveOrganizer && { driveOrganizer: awilix.asClass(DriveOrganizer).singleton() }),
         ...(AIPoweredInsightsGenerator && { aiPoweredInsightsGenerator: awilix.asClass(AIPoweredInsightsGenerator).singleton() }),
-        ...(WebhookFileDownloader && { webhookFileDownloader: awilix.asClass(WebhookFileDownloader).inject(() => ({ config })).singleton() }),
+        ...(WebhookFileDownloader && { webhookFileDownloader: awilix.asClass(WebhookFileDownloader).singleton() }),
         
         // Alias for backward compatibility
         ...(CompleteSmartNameStandardizer && { nameStandardizer: awilix.asValue(new CompleteSmartNameStandardizer()) }),
