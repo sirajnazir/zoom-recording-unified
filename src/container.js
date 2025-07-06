@@ -20,7 +20,7 @@ const { EventBus, Logger, Cache, MetricsCollector } = require('./shared');
 logToFile('Loaded shared utilities:', { EventBus, Logger, Cache, MetricsCollector });
 
 // Infrastructure services
-let ZoomService, GoogleDriveService, DualTabGoogleSheetsService, SmartWeekInferencer, EnhancedMetadataExtractor, FileContentAnalyzer, KnowledgeBaseService, OpenAIService, CompleteSmartNameStandardizer, DriveOrganizer, AIPoweredInsightsGenerator;
+let ZoomService, GoogleDriveService, DualTabGoogleSheetsService, SmartWeekInferencer, EnhancedMetadataExtractor, FileContentAnalyzer, KnowledgeBaseService, OpenAIService, CompleteSmartNameStandardizer, DriveOrganizer, AIPoweredInsightsGenerator, WebhookFileDownloader;
 try { ZoomService = require('./infrastructure/services/ZoomService').ZoomService; } catch (e) { logToFile('ZoomService import error:', e); }
 try { GoogleDriveService = require('./infrastructure/services/GoogleDriveService').GoogleDriveService; } catch (e) { logToFile('GoogleDriveService import error:', e); }
 try { DualTabGoogleSheetsService = require('./infrastructure/services/DualTabGoogleSheetsService').DualTabGoogleSheetsService; } catch (e) { logToFile('DualTabGoogleSheetsService import error:', e); }
@@ -32,7 +32,8 @@ try { OpenAIService = require('./infrastructure/services/OpenAIService').OpenAIS
 try { CompleteSmartNameStandardizer = require('./infrastructure/services/CompleteSmartNameStandardizer').CompleteSmartNameStandardizer; } catch (e) { logToFile('CompleteSmartNameStandardizer import error:', e); }
 try { DriveOrganizer = require('./infrastructure/services/DriveOrganizer'); } catch (e) { logToFile('DriveOrganizer import error:', e); }
 try { AIPoweredInsightsGenerator = require('./infrastructure/ai/ai-powered-insights-generator'); } catch (e) { logToFile('AIPoweredInsightsGenerator import error:', e); }
-logToFile('Loaded infrastructure services:', { ZoomService, GoogleDriveService, DualTabGoogleSheetsService, SmartWeekInferencer, EnhancedMetadataExtractor, FileContentAnalyzer, KnowledgeBaseService, OpenAIService, CompleteSmartNameStandardizer, DriveOrganizer, AIPoweredInsightsGenerator });
+try { WebhookFileDownloader = require('../services/WebhookFileDownloader'); } catch (e) { logToFile('WebhookFileDownloader import error:', e); }
+logToFile('Loaded infrastructure services:', { ZoomService, GoogleDriveService, DualTabGoogleSheetsService, SmartWeekInferencer, EnhancedMetadataExtractor, FileContentAnalyzer, KnowledgeBaseService, OpenAIService, CompleteSmartNameStandardizer, DriveOrganizer, AIPoweredInsightsGenerator, WebhookFileDownloader });
 
 // Application services
 let RecordingAnalyzer, InsightsGenerator, TranscriptionAnalyzer, ParticipantAnalyzer, RecordingProcessor, RecordingService;
@@ -111,6 +112,7 @@ function createContainer() {
         ...(KnowledgeBaseService && { knowledgeBaseService: awilix.asClass(KnowledgeBaseService).singleton() }),
         ...(DriveOrganizer && { driveOrganizer: awilix.asClass(DriveOrganizer).singleton() }),
         ...(AIPoweredInsightsGenerator && { aiPoweredInsightsGenerator: awilix.asClass(AIPoweredInsightsGenerator).singleton() }),
+        ...(WebhookFileDownloader && { webhookFileDownloader: awilix.asClass(WebhookFileDownloader).inject(() => ({ config })).singleton() }),
         
         // Alias for backward compatibility
         ...(CompleteSmartNameStandardizer && { nameStandardizer: awilix.asValue(new CompleteSmartNameStandardizer()) }),
