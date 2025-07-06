@@ -23,10 +23,40 @@ const { ProductionZoomProcessor } = require('./complete-production-processor');
 
 class ZoomRecordingReprocessor {
     constructor() {
-        this.zoomApiToken = process.env.ZOOM_ACCESS_TOKEN;
-        this.zoomAccountId = process.env.ZOOM_ACCOUNT_ID;
+        this.accountId = process.env.ZOOM_ACCOUNT_ID;
+        this.clientId = process.env.ZOOM_CLIENT_ID;
+        this.clientSecret = process.env.ZOOM_CLIENT_SECRET;
+        this.token = null;
+        this.tokenExpiry = null;
         this.downloadDir = path.join(process.env.OUTPUT_DIR || './output', 'reprocess-downloads');
         this.webhookSimDir = path.join(process.env.OUTPUT_DIR || './output', 'webhook-simulation-logs');
+    }
+
+    async getZoomToken() {
+        if (this.token && this.tokenExpiry && new Date() < this.tokenExpiry) {
+            return this.token;
+        }
+
+        try {
+            const response = await axios.post('https://zoom.us/oauth/token', null, {
+                params: {
+                    grant_type: 'account_credentials',
+                    account_id: this.accountId
+                },
+                auth: {
+                    username: this.clientId,
+                    password: this.clientSecret
+                }
+            });
+
+            this.token = response.data.access_token;
+            this.tokenExpiry = new Date(Date.now() + (response.data.expires_in - 60) * 1000);
+            console.log('✅ Zoom token obtained successfully');
+            return this.token;
+        } catch (error) {
+            console.error('❌ Failed to get Zoom token:', error.message);
+            throw error;
+        }
     }
 
     /**
@@ -88,20 +118,67 @@ class ZoomRecordingReprocessor {
 
     /**
      * Fetch recording details from Zoom API
+     * Supports both meeting IDs and UUIDs
      */
     async fetchRecordingFromZoomAPI(recordingId) {
         try {
-            const response = await axios.get(
-                `https://api.zoom.us/v2/meetings/${recordingId}/recordings`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${this.zoomApiToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
+            const token = await this.getZoomToken();
             
-            return response.data;
+            // Check if this looks like a UUID (contains +, /, or ==)
+            const isUUID = recordingId.includes('+') || recordingId.includes('/') || recordingId.includes('==');
+            
+            if (isUUID) {
+                console.log(`   🔍 Detected UUID format, using UUID endpoints...`);
+                
+                // Convert UUID for Zoom API (double URL encode)
+                const encodedUuid = encodeURIComponent(encodeURIComponent(recordingId));
+                
+                // Try meetings endpoint first
+                try {
+                    const response = await axios.get(
+                        `https://api.zoom.us/v2/meetings/${encodedUuid}/recordings`,
+                        {
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        }
+                    );
+                    
+                    return response.data;
+                } catch (meetingError) {
+                    if (meetingError.response?.status === 404) {
+                        // Try past_meetings endpoint
+                        console.log(`   ⚠️ Meetings endpoint failed, trying past_meetings...`);
+                        const pastResponse = await axios.get(
+                            `https://api.zoom.us/v2/past_meetings/${encodedUuid}/recordings`,
+                            {
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json'
+                                }
+                            }
+                        );
+                        
+                        return pastResponse.data;
+                    }
+                    throw meetingError;
+                }
+            } else {
+                // Try as meeting ID
+                console.log(`   🔍 Using meeting ID endpoint...`);
+                const response = await axios.get(
+                    `https://api.zoom.us/v2/meetings/${recordingId}/recordings`,
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }
+                );
+                
+                return response.data;
+            }
         } catch (error) {
             if (error.response?.status === 404) {
                 console.error(`Recording ${recordingId} not found in Zoom Cloud`);
@@ -135,7 +212,8 @@ class ZoomRecordingReprocessor {
                 const filePath = path.join(recordingDir, fileName);
                 
                 // Download file with access token
-                const downloadUrl = file.download_url + `?access_token=${this.zoomApiToken}`;
+                const token = await this.getZoomToken();
+                const downloadUrl = file.download_url + `?access_token=${token}`;
                 
                 const response = await axios({
                     method: 'GET',
@@ -265,13 +343,19 @@ class ZoomRecordingReprocessor {
      * Save webhook payload for debugging
      */
     async saveWebhookPayload(webhook, recordingId) {
-        await fs.mkdir(this.webhookSimDir, { recursive: true });
-        
-        const filename = `webhook-reprocess-${recordingId}-${Date.now()}.json`;
-        const filepath = path.join(this.webhookSimDir, filename);
-        
-        await fs.writeFile(filepath, JSON.stringify(webhook, null, 2));
-        console.log(`   📝 Webhook payload saved to: ${filepath}`);
+        try {
+            await fs.mkdir(this.webhookSimDir, { recursive: true });
+            
+            // Sanitize recordingId for filename (remove special characters)
+            const sanitizedId = recordingId.replace(/[^a-zA-Z0-9]/g, '_');
+            const filename = `webhook-reprocess-${sanitizedId}-${Date.now()}.json`;
+            const filepath = path.join(this.webhookSimDir, filename);
+            
+            await fs.writeFile(filepath, JSON.stringify(webhook, null, 2));
+            console.log(`   📝 Webhook payload saved to: ${filepath}`);
+        } catch (error) {
+            console.error(`   ⚠️ Failed to save webhook payload: ${error.message}`);
+        }
     }
 
     /**
