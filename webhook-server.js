@@ -174,7 +174,7 @@ async function processRecordingCompleted(webhookData) {
 
         if (result.success) {
             console.log(`✅ Webhook recording processed successfully`);
-            console.log(`📁 Standardized Name: ${result.processingResult?.standardizedName}`);
+            console.log(`📁 Standardized Name: ${result.processingResult?.nameAnalysis?.standardizedName || result.processingResult?.nameAnalysis?.standardized}`);
             console.log(`📊 Category: ${result.processingResult?.category}`);
         } else {
             console.error(`❌ Webhook recording processing failed: ${result.error}`);

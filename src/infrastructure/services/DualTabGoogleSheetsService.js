@@ -402,18 +402,30 @@ class DualTabGoogleSheetsService {
         // Extract processed data from the processor's structure
         const processedData = processed || {};
         
+        // Extract the standardized name from the correct location in processedRecording
+        // It's stored as name_analysis_standardized_name in the webhook processing
+        const standardizedName = processedData.name_analysis_standardized_name || 
+                               processedData.standardizedName || 
+                               processedData.standardized_name ||
+                               original.topic || 
+                               'Unknown';
+        
         // Use the already processed standardized name from the processor
         const nameAnalysis = {
-            standardizedName: processedData.standardizedName || original.topic || 'Unknown',
-            confidence: processedData.nameConfidence || 0,
-            method: processedData.nameResolutionMethod || 'fallback'
+            standardizedName: standardizedName,
+            confidence: processedData.name_analysis_confidence || processedData.nameConfidence || 0,
+            method: processedData.name_analysis_method || processedData.nameResolutionMethod || 'fallback'
         };
         
-        // Extract coach and student names from the standardized name
+        // Extract coach and student names from the standardized name or from processed data
         // Format: "Coaching_CoachName_StudentName_WkXX_Date"
         const nameParts = nameAnalysis.standardizedName.split('_');
-        const coachName = nameParts.length > 1 ? nameParts[1] : 'unknown';
-        const studentName = nameParts.length > 2 ? nameParts[2] : 'Unknown';
+        const coachName = processedData.name_analysis_coach || 
+                         processedData.coach || 
+                         (nameParts.length > 1 ? nameParts[1] : 'unknown');
+        const studentName = processedData.name_analysis_student || 
+                           processedData.student || 
+                           (nameParts.length > 2 ? nameParts[2] : 'Unknown');
         
         // Get meeting ID and UUID for the suffix
         const meetingId = original.meeting_id || original.id || '';
@@ -429,10 +441,11 @@ class DualTabGoogleSheetsService {
         const standardizedNameWithSuffix = `${baseStandardizedName}_M:${meetingId}_U:${uuidBase64}`;
         
         // Use the week number that was already correctly inferred by the processor
+        // It's stored as week_analysis_week_number in the webhook processing
         const weekAnalysis = {
-            weekNumber: processedData.week_number || processedData.weekNumber || 0,
-            confidence: processedData.week_confidence || processedData.weekConfidence || 0,
-            method: processedData.week_method || processedData.weekMethod || 'fallback'
+            weekNumber: processedData.week_analysis_week_number || processedData.week_number || processedData.weekNumber || 0,
+            confidence: processedData.week_analysis_confidence || processedData.week_confidence || processedData.weekConfidence || 0,
+            method: processedData.week_analysis_method || processedData.week_method || processedData.weekMethod || 'fallback'
         };
         
         // Extract AI insights from processed data
@@ -445,11 +458,12 @@ class DualTabGoogleSheetsService {
         const outcomes = processedData.outcomes || [];
         
         // Extract file management data from processed data
+        // It's stored in upload_result_folder_id and upload_result_drive_link
         const fileManagement = {
             driveFolder: processedData.driveFolder || '',
-            driveFolderId: processedData.driveFolderId || '',
+            driveFolderId: processedData.upload_result_folder_id || processedData.driveFolderId || '',
             driveFileIds: processedData.driveFileIds || {},
-            driveLink: processedData.driveLink || '',
+            driveLink: processedData.upload_result_drive_link || processedData.driveLink || '',
             downloadedFiles: processedData.downloadedFiles || {}
         };
         

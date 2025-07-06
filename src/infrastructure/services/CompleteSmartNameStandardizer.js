@@ -20,34 +20,36 @@ class CompleteSmartNameStandardizer {
         
         // Coach mappings from SmartRecordingStandardizer
         this.coachMappings = {
-            'jenny': 'jenny',
-            'jenny duan': 'jenny',
-            'jennyduan': 'jenny',
-            'jamie': 'jamie',
-            'ivylevel jamie': 'jamie',
-            'rishi': 'rishi',
-            'rishi padmanabhan': 'rishi',
-            'aditi': 'aditi',
-            'aditi b': 'aditi',
-            'aditi bhaskar': 'aditi',
-            'noor': 'noor',
-            'noor hassan': 'noor',
-            'juli': 'juli',
-            'julie': 'juli',
-            'kelvin': 'kelvin',
-            'erin': 'erin',
-            'erin ye': 'erin',
-            'steven': 'steven',
-            'steven zhou': 'steven',
-            'marissa': 'marissa',
-            'andrew': 'andrew',
-            'janice': 'janice',
-            'janice teoh': 'janice',
-            'siraj': 'siraj',
-            'katie': 'katie',
-            'alan': 'alan',
-            'alice': 'alice',
-            'vilina': 'vilina'
+            'jenny': 'Jenny',
+            'jenny duan': 'Jenny',
+            'jennyduan': 'Jenny',
+            'jamie': 'Jamie',
+            'jamie judahbram': 'Jamie',
+            'jamiejudahbram': 'Jamie',
+            'ivylevel jamie': 'Jamie',
+            'rishi': 'Rishi',
+            'rishi padmanabhan': 'Rishi',
+            'aditi': 'Aditi',
+            'aditi b': 'Aditi',
+            'aditi bhaskar': 'Aditi',
+            'noor': 'Noor',
+            'noor hassan': 'Noor',
+            'juli': 'Juli',
+            'julie': 'Juli',
+            'kelvin': 'Kelvin',
+            'erin': 'Erin',
+            'erin ye': 'Erin',
+            'steven': 'Steven',
+            'steven zhou': 'Steven',
+            'marissa': 'Marissa',
+            'andrew': 'Andrew',
+            'janice': 'Janice',
+            'janice teoh': 'Janice',
+            'siraj': 'Siraj',
+            'katie': 'Katie',
+            'alan': 'Alan',
+            'alice': 'Alice',
+            'vilina': 'Vilina'
         };
         
         // Initialize comprehensive student mappings
@@ -170,19 +172,46 @@ class CompleteSmartNameStandardizer {
                     // Extract student from "Jamie JudahBram's Personal Meeting Room"
                     const fullName = match[1];
                     
-                    // First check if it's a known coach followed by student name
+                    // Check if the full name is a known coach (e.g., "Jamie JudahBram")
+                    const fullNameLower = fullName.toLowerCase();
+                    if (this.coachMappings && this.coachMappings[fullNameLower]) {
+                        // This is just the coach's full name, no student in the title
+                        this.logger?.info(`[DEBUG] Personal Meeting Room belongs to coach: ${fullName}`);
+                        return null; // Will need to extract student from transcript/chat
+                    }
+                    
+                    // Check if it's a known coach followed by student name
                     const coachStudentPattern = /^(jamie|noor|jenny|rishi|aditi|kelvin|erin|steven|marissa|andrew|janice|siraj|katie|alan|alice|vilina)\s+(.+)$/i;
                     const coachStudentMatch = fullName.match(coachStudentPattern);
                     if (coachStudentMatch) {
-                        return coachStudentMatch[2]; // Return the student part
+                        const coachPart = coachStudentMatch[1];
+                        const remainingPart = coachStudentMatch[2];
+                        
+                        // Check if this might be the coach's last name (like "JudahBram")
+                        const fullCoachName = `${coachPart} ${remainingPart}`.toLowerCase();
+                        if (this.coachMappings && this.coachMappings[fullCoachName]) {
+                            // This is the coach's full name
+                            this.logger?.info(`[DEBUG] Personal Meeting Room belongs to coach: ${coachPart} ${remainingPart}`);
+                            return null;
+                        }
+                        
+                        // Otherwise, the remaining part is likely the student
+                        return remainingPart;
                     }
                     
-                    // Check if it's a compound name like "Jamie JudahBram"
+                    // Check if it's a compound name
                     const parts = fullName.split(/\s+/);
                     if (parts.length >= 2) {
-                        // If first part is a known coach, return the rest as student
+                        // If first part is a known coach first name
                         const firstPart = parts[0].toLowerCase();
                         if (this.coachMappings && this.coachMappings[firstPart]) {
+                            // Check if the full name is a coach
+                            const fullNameCheck = parts.join(' ').toLowerCase();
+                            if (this.coachMappings[fullNameCheck]) {
+                                return null; // It's the coach's full name
+                            }
+                            
+                            // Otherwise return the rest as student
                             return parts.slice(1).join(' ');
                         }
                         
@@ -328,7 +357,11 @@ class CompleteSmartNameStandardizer {
             'shashank': 'Shashank',
             'sameeha': 'Sameeha',
             'danait': 'Danait',
-            'vihana': 'Vihana'
+            'vihana': 'Vihana',
+            'zainab': 'Zainab',
+            'hiba': 'Hiba',
+            'judah': 'Judah',
+            'bram': 'Bram'
         };
     }
     
@@ -370,16 +403,22 @@ class CompleteSmartNameStandardizer {
             const components = await this.extractComponents(recording);
             // --- ENHANCED: For Personal Meeting Room, ensure student extraction is complete before session type ---
             if ((recording.topic || '').toLowerCase().includes('personal meeting room') && components.student === 'Unknown') {
-                // Try to extract student from compound names in Personal Meeting Room
+                // For Personal Meeting Room, we need to check if the full name is just the coach's name
                 const match = recording.topic.match(/^(.+?)(?:'s|'s)\s+Personal\s+Meeting\s+Room$/i);
                 if (match && match[1]) {
                     const fullName = match[1];
-                    const parts = fullName.split(/\s+/);
-                    if (parts.length >= 2) {
-                        const possibleStudent = parts[parts.length - 1];
-                        if (possibleStudent.length > 3 && /^[A-Z][a-z]+/.test(possibleStudent)) {
-                            components.student = possibleStudent;
-                            this.logger?.info(`🔍 [PMR] Extracted student from Personal Meeting Room: ${possibleStudent}`);
+                    const fullNameLower = fullName.toLowerCase();
+                    
+                    // Don't extract student if this is just the coach's full name
+                    if (this.coachMappings && !this.coachMappings[fullNameLower]) {
+                        // Only try to extract if it's NOT a known coach full name
+                        const parts = fullName.split(/\s+/);
+                        if (parts.length >= 2) {
+                            const possibleStudent = parts[parts.length - 1];
+                            if (possibleStudent.length > 3 && /^[A-Z][a-z]+/.test(possibleStudent)) {
+                                components.student = possibleStudent;
+                                this.logger?.info(`🔍 [PMR] Extracted student from Personal Meeting Room: ${possibleStudent}`);
+                            }
                         }
                     }
                 }
@@ -700,17 +739,48 @@ class CompleteSmartNameStandardizer {
         const lines = transcriptContent.split('\n');
         const studentCandidates = new Map();
         
-        for (const line of lines) {
+        // Check if this is VTT format
+        const isVTT = lines[0] && lines[0].trim() === 'WEBVTT';
+        
+        this.logger?.info(`[DEBUG] extractStudentFromTranscript: VTT format detected: ${isVTT}, total lines: ${lines.length}`);
+        
+        let speakerLinesFound = 0;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            // Skip empty lines
+            if (!line) continue;
+            
+            // For VTT format, skip line numbers and timestamps
+            if (isVTT) {
+                // Skip if this is a number (subtitle index)
+                if (/^\d+$/.test(line)) continue;
+                // Skip if this is a timestamp line
+                if (/^\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}$/.test(line)) continue;
+            }
+            
             // Look for speaker patterns: "Name: message"
             const match = line.match(/^([^:]+):\s*(.+)$/);
             if (match) {
+                speakerLinesFound++;
                 const speakerName = match[1].trim();
                 const message = match[2].trim();
                 
+                if (speakerLinesFound <= 5) {
+                    this.logger?.info(`[DEBUG] Found speaker line ${speakerLinesFound}: "${speakerName}: ${message.substring(0, 50)}..."`);
+                }
+                
                 if (!speakerName || speakerName.length < 2) continue;
                 
-                // Skip if this is the coach
+                // Skip if this is the coach (check both first name and full name)
                 if (coachName && speakerName.toLowerCase().includes(coachName.toLowerCase())) {
+                    continue;
+                }
+                
+                // Also skip if it's a known coach full name
+                const speakerLower = speakerName.toLowerCase();
+                if (this.coachMappings[speakerLower]) {
                     continue;
                 }
                 
@@ -725,6 +795,15 @@ class CompleteSmartNameStandardizer {
                     }
                 }
                 
+                // If not in mappings but not the coach, still consider as a student candidate
+                if (!coachName || !speakerName.toLowerCase().includes(coachName.toLowerCase())) {
+                    if (speakerName.length > 2 && !speakerName.toLowerCase().includes('judahbram')) {
+                        const count = studentCandidates.get(speakerName) || 0;
+                        studentCandidates.set(speakerName, count + 1);
+                        this.logger?.info(`[DEBUG] Potential student found in transcript: ${speakerName} (count: ${count + 1})`);
+                    }
+                }
+                
                 // Also check common student names
                 const commonStudentNames = [
                     'aarnav', 'aarnav shah', 'aarnav patel', 'aarnav kumar',
@@ -735,7 +814,8 @@ class CompleteSmartNameStandardizer {
                     'anoushka', 'anoushka chakravarty',
                     'minseo', 'minseo kim',
                     'victoria', 'ananyaa', 'arushi', 'huda', 'emma',
-                    'abhi', 'kabir', 'netra', 'shashank', 'sameeha', 'danait', 'vihana'
+                    'abhi', 'kabir', 'netra', 'shashank', 'sameeha', 'danait', 'vihana',
+                    'zainab', 'hiba', 'judah', 'bram'
                 ];
                 
                 for (const commonName of commonStudentNames) {
@@ -751,12 +831,17 @@ class CompleteSmartNameStandardizer {
         }
         
         // Return the most frequently mentioned student candidate
+        this.logger?.info(`[DEBUG] Total speaker lines found: ${speakerLinesFound}`);
+        this.logger?.info(`[DEBUG] Student candidates found: ${studentCandidates.size}`);
+        
         if (studentCandidates.size > 0) {
             const sortedCandidates = Array.from(studentCandidates.entries())
                 .sort((a, b) => b[1] - a[1]);
+            this.logger?.info(`[DEBUG] Top student candidate: ${sortedCandidates[0][0]} (count: ${sortedCandidates[0][1]})`);
             return sortedCandidates[0][0];
         }
         
+        this.logger?.info(`[DEBUG] No student candidates found in transcript`);
         return null;
     }
     
@@ -803,7 +888,8 @@ class CompleteSmartNameStandardizer {
                     'anoushka', 'anoushka chakravarty',
                     'minseo', 'minseo kim',
                     'victoria', 'ananyaa', 'arushi', 'huda', 'emma',
-                    'abhi', 'kabir', 'netra', 'shashank', 'sameeha', 'danait', 'vihana'
+                    'abhi', 'kabir', 'netra', 'shashank', 'sameeha', 'danait', 'vihana',
+                    'zainab', 'hiba', 'judah', 'bram'
                 ];
                 
                 for (const commonName of commonStudentNames) {
@@ -819,12 +905,17 @@ class CompleteSmartNameStandardizer {
         }
         
         // Return the most frequently mentioned student candidate
+        this.logger?.info(`[DEBUG] Total speaker lines found: ${speakerLinesFound}`);
+        this.logger?.info(`[DEBUG] Student candidates found: ${studentCandidates.size}`);
+        
         if (studentCandidates.size > 0) {
             const sortedCandidates = Array.from(studentCandidates.entries())
                 .sort((a, b) => b[1] - a[1]);
+            this.logger?.info(`[DEBUG] Top student candidate: ${sortedCandidates[0][0]} (count: ${sortedCandidates[0][1]})`);
             return sortedCandidates[0][0];
         }
         
+        this.logger?.info(`[DEBUG] No student candidates found in transcript`);
         return null;
     }
     
