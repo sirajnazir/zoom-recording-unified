@@ -1923,54 +1923,6 @@ class ProductionZoomProcessor {
                 driveFileIds
             };
             
-            // Step 10: Update Google Sheets with comprehensive data
-            try {
-                this.logger.info('📊 Updating Google Sheets with comprehensive processed data...');
-                await googleSheetsService.updateMasterSpreadsheet(
-                    { processed: processedRecording, original: recording },
-                    'Comprehensive Processing'
-                );
-                this.logger.info('✅ Google Sheets updated successfully with comprehensive data');
-            } catch (sheetsError) {
-                this.logger.error('❌ Failed to update Google Sheets:', sheetsError);
-                // Continue processing even if sheets update fails
-            }
-            
-            const processingTime = Date.now() - startTime;
-            
-            this.results.successful++;
-            this.processedCount++;
-            
-            this.logger.info(`✅ Recording processed successfully: ${recordingId} (${processingTime}ms)`);
-            this.logger.info(`   - Name: ${nameAnalysis.standardizedName}`);
-            this.logger.info(`   - Week: ${weekAnalysis.weekNumber}`);
-            this.logger.info(`   - Category: ${recordingCategory}`);
-            this.logger.info(`   - AI Insights: ${!!aiInsights}`);
-            this.logger.info(`   - Outcomes: ${outcomes.length}`);
-            this.logger.info(`   - Files: ${Object.keys(downloadedFiles).length}`);
-            this.logger.info(`   - UUID: ${uuid}`);
-            
-            console.log(`✅ Recording processing complete:`);
-            console.log(`   🔑 UUID: ${uuid}`);
-            console.log(`   📋 Standardized Name: ${nameAnalysis.standardizedName}`);
-            console.log(`   📅 Week: ${weekAnalysis.weekNumber}`);
-            console.log(`   📂 Category: ${recordingCategory}`);
-            console.log(`   ⏱️ Processing Time: ${processingTime}ms`);
-            
-            // DEBUG: End of recording processing
-            console.log('==============================');
-            console.log(`✅ [DEBUG] END Processing Recording: ${recording.id} (UUID: ${recording.uuid})`);
-                            console.log(`   Final downloadedFiles: [${Object.keys(downloadedFiles).join(', ')}]`);
-            console.log(`   Final transcriptContent length: ${transcriptContent.length}`);
-            if (transcriptContent.length > 0) {
-                console.log(`   Final transcript preview: ${transcriptContent.substring(0, 200)}`);
-            }
-            console.log(`   Final chatContent length: ${chatContent.length}`);
-            if (chatContent.length > 0) {
-                console.log(`   Final chat preview: ${chatContent.substring(0, 200)}`);
-            }
-            console.log('==============================');
-            
             // Step 9: Organize files in Google Drive (after processedRecording is created)
             if (driveOrganizer && typeof driveOrganizer.organizeRecording === 'function') {
                 console.log('📁 DEBUG: About to call driveOrganizer.organizeRecording...');
@@ -2023,6 +1975,61 @@ class ProductionZoomProcessor {
                 console.log('🔍 DEBUG: driveOrganizer exists:', !!driveOrganizer);
                 console.log('🔍 DEBUG: organizeRecording is function:', !!(driveOrganizer && typeof driveOrganizer.organizeRecording === 'function'));
             }
+            
+            // Step 10: Update Google Sheets with comprehensive data (AFTER Drive organization)
+            try {
+                this.logger.info('📊 Updating Google Sheets with comprehensive processed data...');
+                // Update processedRecording with the drive results before sheets update
+                processedRecording.upload_result_drive_link = driveLink || '';
+                processedRecording.upload_result_folder_id = driveFolderId || '';
+                processedRecording.driveFolderId = driveFolderId || '';
+                processedRecording.driveLink = driveLink || '';
+                processedRecording.driveFileIds = driveFileIds || {};
+                
+                await googleSheetsService.updateMasterSpreadsheet(
+                    { processed: processedRecording, original: recording },
+                    'Comprehensive Processing'
+                );
+                this.logger.info('✅ Google Sheets updated successfully with comprehensive data');
+            } catch (sheetsError) {
+                this.logger.error('❌ Failed to update Google Sheets:', sheetsError);
+                // Continue processing even if sheets update fails
+            }
+            
+            const processingTime = Date.now() - startTime;
+            
+            this.results.successful++;
+            this.processedCount++;
+            
+            this.logger.info(`✅ Recording processed successfully: ${recordingId} (${processingTime}ms)`);
+            this.logger.info(`   - Name: ${nameAnalysis.standardizedName}`);
+            this.logger.info(`   - Week: ${weekAnalysis.weekNumber}`);
+            this.logger.info(`   - Category: ${recordingCategory}`);
+            this.logger.info(`   - AI Insights: ${!!aiInsights}`);
+            this.logger.info(`   - Outcomes: ${outcomes.length}`);
+            this.logger.info(`   - Files: ${Object.keys(downloadedFiles).length}`);
+            this.logger.info(`   - UUID: ${uuid}`);
+            
+            console.log(`✅ Recording processing complete:`);
+            console.log(`   🔑 UUID: ${uuid}`);
+            console.log(`   📋 Standardized Name: ${nameAnalysis.standardizedName}`);
+            console.log(`   📅 Week: ${weekAnalysis.weekNumber}`);
+            console.log(`   📂 Category: ${recordingCategory}`);
+            console.log(`   ⏱️ Processing Time: ${processingTime}ms`);
+            
+            // DEBUG: End of recording processing
+            console.log('==============================');
+            console.log(`✅ [DEBUG] END Processing Recording: ${recording.id} (UUID: ${recording.uuid})`);
+                            console.log(`   Final downloadedFiles: [${Object.keys(downloadedFiles).join(', ')}]`);
+            console.log(`   Final transcriptContent length: ${transcriptContent.length}`);
+            if (transcriptContent.length > 0) {
+                console.log(`   Final transcript preview: ${transcriptContent.substring(0, 200)}`);
+            }
+            console.log(`   Final chatContent length: ${chatContent.length}`);
+            if (chatContent.length > 0) {
+                console.log(`   Final chat preview: ${chatContent.substring(0, 200)}`);
+            }
+            console.log('==============================');
             
             return {
                 success: true,
