@@ -502,6 +502,8 @@ class ProductionZoomProcessor {
                 maxFileSize: 500 * 1024 * 1024, // 500MB
                 supportedFormats: ['mp4', 'm4a', 'vtt', 'txt', 'json']
             },
+            downloadTimeout: 300000, // 5 minutes
+            maxRetries: 3,
             SHEETS_BATCH_SIZE: 100,
             SHEETS_RATE_LIMIT_DELAY: 100
         };
