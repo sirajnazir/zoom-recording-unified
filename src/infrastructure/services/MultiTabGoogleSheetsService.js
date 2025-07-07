@@ -681,7 +681,17 @@ class MultiTabGoogleSheetsService {
             );
         }
         
-        const range = `'${tab.name}'!A1:${String.fromCharCode(65 + headers.length - 1)}1`;
+        // Calculate the correct column letter for headers
+        let lastColumn;
+        if (headers.length <= 26) {
+            lastColumn = String.fromCharCode(65 + headers.length - 1);
+        } else {
+            // Handle columns beyond Z (AA, AB, etc.)
+            const firstLetter = String.fromCharCode(65 + Math.floor((headers.length - 1) / 26) - 1);
+            const secondLetter = String.fromCharCode(65 + ((headers.length - 1) % 26));
+            lastColumn = firstLetter + secondLetter;
+        }
+        const range = `'${tab.name}'!A1:${lastColumn}1`;
         
         try {
             await this.sheets.spreadsheets.values.update({
