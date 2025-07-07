@@ -769,12 +769,13 @@ class ProductionZoomProcessor {
         // ========== GOOGLE SHEETS SERVICE WITH DUAL TAB SUPPORT ==========
         console.log('\n📊 Setting up Google Sheets Service with Dual Tab Support...\n');
         
-        // Register DualTabGoogleSheetsService as the main Google Sheets service
+        // Register MultiTabGoogleSheetsService as the main Google Sheets service
         container.register({
             googleSheetsService: asFunction(({ config, logger, nameStandardizer, weekInferencer, metadataExtractor, transcriptionAnalyzer }) => {
                 try {
-                    const DualTabGoogleSheetsService = require('./src/infrastructure/services/DualTabGoogleSheetsService').DualTabGoogleSheetsService;
-                    return new DualTabGoogleSheetsService({
+                    // Try to use the new MultiTabGoogleSheetsService with 6 tabs (3 pairs)
+                    const MultiTabGoogleSheetsService = require('./src/infrastructure/services/MultiTabGoogleSheetsService');
+                    return new MultiTabGoogleSheetsService({
                         config,
                         logger,
                         nameStandardizer,
@@ -783,8 +784,21 @@ class ProductionZoomProcessor {
                         transcriptionAnalyzer
                     });
                 } catch (error) {
-                    const GoogleSheetsService = require('./src/infrastructure/services/GoogleSheetsService').GoogleSheetsService;
-                    return new GoogleSheetsService({ config, logger });
+                    console.log('⚠️ MultiTabGoogleSheetsService not available, falling back to DualTabGoogleSheetsService');
+                    try {
+                        const DualTabGoogleSheetsService = require('./src/infrastructure/services/DualTabGoogleSheetsService').DualTabGoogleSheetsService;
+                        return new DualTabGoogleSheetsService({
+                            config,
+                            logger,
+                            nameStandardizer,
+                            weekInferencer,
+                            metadataExtractor,
+                            transcriptionAnalyzer
+                        });
+                    } catch (error2) {
+                        const GoogleSheetsService = require('./src/infrastructure/services/GoogleSheetsService').GoogleSheetsService;
+                        return new GoogleSheetsService({ config, logger });
+                    }
                 }
             }).singleton()
         });
