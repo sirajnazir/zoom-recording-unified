@@ -113,7 +113,9 @@ class MultiTabGoogleSheetsService {
         this.batchSize = config.SHEETS_BATCH_SIZE || 100;
         this.rateLimitDelay = config.SHEETS_RATE_LIMIT_DELAY || 100;
         
-        this._initialize();
+        // Track initialization state
+        this.isInitialized = false;
+        this.initializationPromise = this._initialize();
     }
     
     /**
@@ -123,10 +125,20 @@ class MultiTabGoogleSheetsService {
         try {
             await this._setupAuth();
             await this._ensureAllTabsExist();
+            this.isInitialized = true;
             this.logger.info('MultiTabGoogleSheetsService initialized with 6 tabs');
         } catch (error) {
             this.logger.error('Failed to initialize MultiTabGoogleSheetsService', error);
             throw error;
+        }
+    }
+    
+    /**
+     * Ensure the service is initialized before operations
+     */
+    async ensureInitialized() {
+        if (!this.isInitialized) {
+            await this.initializationPromise;
         }
     }
     
@@ -231,11 +243,13 @@ class MultiTabGoogleSheetsService {
      */
     async addRecording(recordingData, source = 'unknown') {
         try {
+            await this.ensureInitialized();
             // Determine which tab pair to use based on data source
             const normalizedSource = this._normalizeDataSource(source, recordingData);
             const tabPair = this.dataSourceTabMap[normalizedSource] || this.dataSourceTabMap['unknown'];
             
             this.logger.info(`Adding recording to ${normalizedSource} tabs (${tabPair.raw}, ${tabPair.standardized})`);
+            this.logger.info(`Recording data: UUID=${recordingData.uuid}, Topic=${recordingData.topic}, StandardizedName=${recordingData.standardizedName || recordingData.processedData?.standardizedName}`);
             
             // Check for existing recording in the appropriate tabs
             const existingRow = await this._findExistingRecording(
@@ -282,7 +296,11 @@ class MultiTabGoogleSheetsService {
         if (source === 'webhook' || recordingData.source === 'webhook') {
             return 'webhook';
         }
-        if (source === 'Google Drive Import' || recordingData.dataSource === 'Google Drive Import') {
+        if (source === 'google-drive' || 
+            source === 'Google Drive Import' || 
+            source === 'Google Drive Import - Full Pipeline' ||
+            recordingData.dataSource === 'google-drive' ||
+            recordingData.dataSource === 'Google Drive Import') {
             return 'google-drive';
         }
         if (source === 'zoom-api' || source === 'batch') {
@@ -306,6 +324,7 @@ class MultiTabGoogleSheetsService {
      */
     async getRecordingsBySource(dataSource) {
         try {
+            await this.ensureInitialized();
             const normalizedSource = this._normalizeDataSource(dataSource, {});
             const tabPair = this.dataSourceTabMap[normalizedSource];
             
@@ -549,21 +568,30 @@ class MultiTabGoogleSheetsService {
      * Add standardized recording data to the appropriate tab
      */
     async _addStandardizedRecording(recordingData, source, tabKey) {
-        const tab = this.tabs[tabKey];
-        const smartData = await this._generateSmartData(recordingData, source);
-        const values = [this._smartDataToRow(smartData)];
-        
-        const range = `'${tab.name}'!A:BZ`;
-        
-        await this.sheets.spreadsheets.values.append({
-            spreadsheetId: this.spreadsheetId,
-            range,
-            valueInputOption: 'RAW',
-            insertDataOption: 'INSERT_ROWS',
-            requestBody: { values }
-        });
-        
-        await this._updateCache(smartData);
+        try {
+            const tab = this.tabs[tabKey];
+            const smartData = await this._generateSmartData(recordingData, source);
+            const values = [this._smartDataToRow(smartData)];
+            
+            this.logger.info(`Adding to standardized tab ${tab.name} - standardizedName: ${smartData.standardizedName}`);
+            
+            const range = `'${tab.name}'!A:BZ`;
+            
+            await this.sheets.spreadsheets.values.append({
+                spreadsheetId: this.spreadsheetId,
+                range,
+                valueInputOption: 'RAW',
+                insertDataOption: 'INSERT_ROWS',
+                requestBody: { values }
+            });
+            
+            this.logger.info(`Successfully added to ${tab.name}`);
+            
+            await this._updateCache(smartData);
+        } catch (error) {
+            this.logger.error(`Failed to add standardized recording: ${error.message}`);
+            throw error;
+        }
     }
     
     /**
@@ -716,18 +744,29 @@ class MultiTabGoogleSheetsService {
         // This is a simplified version - copy the full implementation from DualTabGoogleSheetsService
         const processedData = original.processedData || original;
         
-        // Get name analysis
-        const nameAnalysis = processedData.nameAnalysis || 
-            (this.nameStandardizer ? await this.nameStandardizer.analyze(original.topic || '') : {});
+        // Get standardized name - it's passed directly in the processedData
+        const standardizedNameWithSuffix = processedData.standardizedName || original.standardizedName || '';
         
-        // Get week analysis
-        const weekAnalysis = processedData.weekAnalysis || 
-            (this.weekInferencer ? await this.weekInferencer.inferWeek(original) : {});
+        // Log for debugging
+        this.logger.info(`_generateSmartData - Input data sources:`);
+        this.logger.info(`  - processedData.standardizedName: ${processedData.standardizedName}`);
+        this.logger.info(`  - original.standardizedName: ${original.standardizedName}`);
+        this.logger.info(`  - Final standardizedName: ${standardizedNameWithSuffix}`);
         
-        // Extract components
-        const coachName = nameAnalysis.components?.coach || '';
-        const studentName = nameAnalysis.components?.student || '';
-        const standardizedNameWithSuffix = nameAnalysis.standardizedName || processedData.standardizedName || '';
+        // Get name analysis - the nameStandardizer doesn't have an analyze method
+        const nameAnalysis = processedData.nameAnalysis || {};
+        
+        // Get week analysis - use the data already processed
+        const weekAnalysis = processedData.weekAnalysis || {
+            weekNumber: processedData.weekNumber || 0,
+            confidence: processedData.weekConfidence || 0,
+            method: processedData.weekInferenceMethod || 'unknown'
+        };
+        
+        // Extract components from standardized name or name analysis
+        const nameParts = standardizedNameWithSuffix.split('_');
+        const coachName = nameAnalysis.components?.coach || (nameParts.length > 2 ? nameParts[2] : '');
+        const studentName = nameAnalysis.components?.student || (nameParts.length > 3 ? nameParts[3] : '');
         
         // Extract insights and analysis
         const aiInsights = processedData.aiInsights || processedData.insights || {};
@@ -1024,6 +1063,111 @@ class MultiTabGoogleSheetsService {
     }
     
     /**
+     * Check if a recording exists by UUID and return details if found
+     */
+    async checkRecordingExists(uuid) {
+        await this.ensureInitialized();
+        const cacheKey = `recording:${uuid}`;
+        
+        // Check cache first
+        const cached = await this.cache.get(cacheKey);
+        if (cached) {
+            return {
+                exists: true,
+                recording: cached
+            };
+        }
+        
+        try {
+            // Check across all standardized tabs
+            const allSources = ['zoom-api', 'webhook', 'google-drive'];
+            
+            for (const source of allSources) {
+                const tabPair = this.dataSourceTabMap[source];
+                if (!tabPair) continue;
+                
+                const standardizedTab = this.tabs[tabPair.standardized];
+                const range = `'${standardizedTab.name}'!A:AY`;
+                
+                const response = await this.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range
+                });
+                
+                const values = response.data.values || [];
+                
+                // Skip header row, search for UUID in column A
+                for (let i = 1; i < values.length; i++) {
+                    const row = values[i];
+                    if (row[0] === uuid) { // UUID is in column A
+                        // Reconstruct recording data from row using standardized columns
+                        const recording = {
+                            uuid: row[0] || '',
+                            fingerprint: row[1] || '',
+                            recordingDate: row[2] || '',
+                            rawName: row[3] || '',
+                            standardizedName: row[4] || '',
+                            nameConfidence: row[5] || '',
+                            nameResolutionMethod: row[6] || '',
+                            familyAccount: row[7] || '',
+                            weekNumber: row[8] || '',
+                            weekConfidence: row[9] || '',
+                            weekInferenceMethod: row[10] || '',
+                            hostEmail: row[11] || '',
+                            hostName: row[12] || '',
+                            meetingTopic: row[13] || '',
+                            participants: row[14] || '',
+                            participantCount: row[15] || '',
+                            meetingId: row[16] || '',
+                            duration: row[17] || '',
+                            startTime: row[18] || '',
+                            endTime: row[19] || '',
+                            recordingType: row[20] || '',
+                            fileSize: row[21] || '',
+                            hasTranscript: row[22] || '',
+                            transcriptQuality: row[23] || '',
+                            speakerCount: row[24] || '',
+                            primarySpeaker: row[25] || '',
+                            driveFolder: row[41] || '',
+                            driveFolderId: row[42] || '',
+                            videoFileId: row[43] || '',
+                            transcriptFileId: row[44] || '',
+                            processedDate: row[45] || '',
+                            processingVersion: row[46] || '',
+                            dataSource: row[47] || source,
+                            lastUpdated: row[48] || '',
+                            driveLink: row[49] || ''
+                        };
+                        
+                        // Cache the result
+                        await this.cache.set(cacheKey, recording, 86400); // 24 hours
+                        
+                        return {
+                            exists: true,
+                            recording,
+                            source
+                        };
+                    }
+                }
+            }
+            
+            // Not found in any tab
+            return {
+                exists: false,
+                recording: null
+            };
+            
+        } catch (error) {
+            this.logger.error('Error checking if recording exists', error);
+            return {
+                exists: false,
+                recording: null,
+                error: error.message
+            };
+        }
+    }
+    
+    /**
      * Update master spreadsheet (legacy method for compatibility)
      * This method determines the data source and routes to appropriate tabs
      */
@@ -1039,14 +1183,24 @@ class MultiTabGoogleSheetsService {
             
             // Determine the actual data source
             let dataSource = source;
+            
+            // Log for debugging
+            this.logger.info(`Determining data source - Source: ${source}, original.dataSource: ${original.dataSource}`);
+            
             if (source === 'Comprehensive Processing' || source === 'Reprocessing') {
                 // This is from batch processing, use 'zoom-api'
                 dataSource = 'zoom-api';
+            } else if (source === 'Google Drive Import - Full Pipeline' || 
+                      original.dataSource === 'google-drive' || 
+                      original.dataSource === 'Google Drive Import' || 
+                      original.driveFileId) {
+                dataSource = 'google-drive';
+                this.logger.info('Detected Google Drive source');
             } else if (original.source === 'webhook' || original.webhook_received_at) {
                 dataSource = 'webhook';
-            } else if (original.dataSource === 'Google Drive Import' || original.driveFileId) {
-                dataSource = 'google-drive';
             }
+            
+            this.logger.info(`Final determined dataSource: ${dataSource}`);
             
             // Add the recording to appropriate tabs
             const enrichedRecording = {
@@ -1060,14 +1214,18 @@ class MultiTabGoogleSheetsService {
             const result = await this.addRecording(enrichedRecording, dataSource);
             
             const duration = Date.now() - startTime;
-            this.metrics.recordHistogram('sheets.update.duration', duration);
+            if (this.metrics && typeof this.metrics.recordHistogram === 'function') {
+                this.metrics.recordHistogram('sheets.update.duration', duration);
+            }
             
             this.logger.info(`Recording ${result.action} in ${dataSource} tabs (${duration}ms)`);
             
             return result;
             
         } catch (error) {
-            this.metrics.incrementCounter('sheets.update.error');
+            if (this.metrics && typeof this.metrics.incrementCounter === 'function') {
+                this.metrics.incrementCounter('sheets.update.error');
+            }
             this.logger.error('Failed to update master spreadsheet', error);
             throw error;
         }
