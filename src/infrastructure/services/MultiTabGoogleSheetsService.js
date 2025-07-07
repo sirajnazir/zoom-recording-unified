@@ -9,7 +9,7 @@ const {
     GoogleSheetsError, 
     ValidationError, 
     RateLimitError 
-} = require('../../shared/errors');
+} = require('../../shared/errors/index.js');
 
 /**
  * Enhanced Google Sheets Service that uses separate tab pairs for each data source:
@@ -463,35 +463,50 @@ class MultiTabGoogleSheetsService {
     // (Authentication, data transformation, etc.)
     async _setupAuth() {
         try {
-            // Get the path to the service account key file
-            const keyFilePath = this.config.google.keyFile || 
-                              process.env.GOOGLE_APPLICATION_CREDENTIALS;
+            // Use the same authentication approach as DualTabGoogleSheetsService
+            let authClient;
             
-            if (!keyFilePath) {
-                throw new Error('Google service account key file not configured');
+            // Check if we have parsed service account credentials
+            if (this.config.google?.serviceAccountJson) {
+                // Use parsed service account JSON
+                this.auth = new google.auth.GoogleAuth({
+                    credentials: this.config.google.serviceAccountJson,
+                    scopes: [
+                        'https://www.googleapis.com/auth/spreadsheets',
+                        'https://www.googleapis.com/auth/drive'
+                    ]
+                });
+                authClient = await this.auth.getClient();
+            } else if (this.config.google?.clientEmail && this.config.google?.privateKey) {
+                // Use individual credentials
+                authClient = new google.auth.JWT({
+                    email: this.config.google.clientEmail,
+                    key: this.config.google.privateKey,
+                    scopes: [
+                        'https://www.googleapis.com/auth/spreadsheets',
+                        'https://www.googleapis.com/auth/drive'
+                    ]
+                });
+                await authClient.authorize();
+            } else {
+                // Try default application credentials
+                this.auth = new google.auth.GoogleAuth({
+                    scopes: [
+                        'https://www.googleapis.com/auth/spreadsheets',
+                        'https://www.googleapis.com/auth/drive'
+                    ]
+                });
+                authClient = await this.auth.getClient();
             }
-
-            // Load the service account key
-            const key = require(keyFilePath);
-            
-            // Create auth client
-            this.auth = new google.auth.GoogleAuth({
-                credentials: key,
-                scopes: [
-                    'https://www.googleapis.com/auth/spreadsheets',
-                    'https://www.googleapis.com/auth/drive'
-                ]
-            });
             
             // Initialize API clients
-            const authClient = await this.auth.getClient();
             this.sheets = google.sheets({ version: 'v4', auth: authClient });
             this.drive = google.drive({ version: 'v3', auth: authClient });
             
             this.logger.info('Google APIs authenticated successfully');
         } catch (error) {
             this.logger.error('Failed to setup Google auth', error);
-            throw new GoogleSheetsError('Authentication failed', error);
+            throw new Error(`Authentication failed: ${error.message}`);
         }
     }
     
