@@ -114,11 +114,17 @@ zoom-recording-unified/
 │   ├── tests/            # All test scripts
 │   ├── old-processors/   # Previous versions
 │   ├── utilities/        # One-off utilities
+│   ├── reprocessing-scripts/ # Reprocessing tools
+│   ├── debug-scripts/    # Debug utilities
+│   ├── monitoring-scripts/ # Monitoring tools
+│   ├── runners/          # Alternative runners
 │   ├── backups/          # Backup directories
 │   └── docs/             # Old documentation
 ├── .gitignore
 ├── package.json
 ├── render.yaml
+├── README.md
+├── CODEBASE_CLEANUP_PLAN.md
 ├── complete-production-processor.js
 ├── webhook-server.js
 └── unified-processor.js
