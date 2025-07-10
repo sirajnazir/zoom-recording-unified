@@ -420,6 +420,12 @@ class FileContentAnalyzer {
         };
         
         try {
+            // If timelineContent looks like a file path, treat it as such
+            if (typeof timelineContent === 'string' && timelineContent.includes('/') && timelineContent.endsWith('.json')) {
+                timelinePath = timelineContent;
+                timelineContent = null;
+            }
+            
             // Load content if path provided
             if (!timelineContent && timelinePath) {
                 timelineContent = await fs.readFile(timelinePath, 'utf8');

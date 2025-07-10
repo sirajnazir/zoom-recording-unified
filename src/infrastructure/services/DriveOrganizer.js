@@ -69,8 +69,8 @@ class DriveOrganizer {
                 this.logger.info(`🔍 [AI INSIGHTS DEBUG] processedData keys: ${Object.keys(processedData).join(', ')}`);
             }
 
-            // Update folder metadata
-            await this.updateFolderMetadata(primarySessionFolder, recording, processedData);
+            // Update folder metadata - disabled as updateFolderMetadata doesn't exist in GoogleDriveService
+            // await this.updateFolderMetadata(primarySessionFolder, recording, processedData);
 
             // Prepare result with folder paths
             const result = {

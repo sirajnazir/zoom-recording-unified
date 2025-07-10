@@ -56,11 +56,30 @@ class AIPoweredInsightsGenerator {
         try {
             this.logger.info(`🤖 Generating AI-powered insights from transcript (length: ${transcriptContent?.length || 0} chars)`);
             
-            // Extract meeting ID for Zoom API
-            this.logger.info(`📡 Extracting Zoom data for meeting: ${meetingId}`);
+            // Check if this is a Zoom recording (dataSource 'zoom-api' or no dataSource specified)
+            const isZoomRecording = !meetingData.dataSource || meetingData.dataSource === 'zoom-api';
             
-            // Extract Zoom insights in parallel with AI analysis
-            const zoomInsightsPromise = this.zoomInsightsExtractor.extractZoomInsights(meetingId, transcriptContent);
+            // Only extract Zoom insights for actual Zoom recordings with valid meeting IDs
+            let zoomInsightsPromise;
+            if (isZoomRecording && meetingId) {
+                this.logger.info(`📡 Extracting Zoom data for meeting: ${meetingId}`);
+                zoomInsightsPromise = this.zoomInsightsExtractor.extractZoomInsights(meetingId, transcriptContent);
+            } else {
+                // Return empty Zoom insights for non-Zoom recordings
+                zoomInsightsPromise = Promise.resolve({
+                    zoomSummary: null,
+                    zoomTopics: [],
+                    zoomActions: [],
+                    zoomQuestions: [],
+                    meetingDetails: null,
+                    recordingDetails: null,
+                    analytics: null,
+                    metadata: {
+                        source: 'skip',
+                        reason: meetingData.dataSource ? `Non-Zoom recording (${meetingData.dataSource})` : 'No meeting ID'
+                    }
+                });
+            }
             
             const insights = {
                 aiSummary: null,
@@ -170,7 +189,21 @@ class AIPoweredInsightsGenerator {
             this.logger.error(`❌ AI insights generation failed: ${error.message}`);
             this.logger.error(`❌ AI insights error details: ${error.message}`);
             const fallbackInsights = this.generateFallbackInsights(meetingData);
-            const zoomInsights = await this.zoomInsightsExtractor.extractZoomInsights(meetingId, transcriptContent);
+            
+            // Only try to get Zoom insights for actual Zoom recordings
+            let zoomInsights;
+            const isZoomRecording = !meetingData.dataSource || meetingData.dataSource === 'zoom-api';
+            if (isZoomRecording && meetingId) {
+                try {
+                    zoomInsights = await this.zoomInsightsExtractor.extractZoomInsights(meetingId, transcriptContent);
+                } catch (zoomError) {
+                    this.logger.warn(`⚠️ Failed to extract Zoom insights in fallback: ${zoomError.message}`);
+                    zoomInsights = { metadata: { source: 'error', error: zoomError.message } };
+                }
+            } else {
+                zoomInsights = { metadata: { source: 'skip', reason: 'Non-Zoom recording' } };
+            }
+            
             const combinedInsights = await this.combineInsights(fallbackInsights, zoomInsights, meetingData);
             combinedInsights.metadata.processingTime = Date.now() - startTime;
             return combinedInsights;
@@ -186,7 +219,7 @@ class AIPoweredInsightsGenerator {
                meetingData.id || 
                meetingData.zoomMeetingId || 
                meetingData.recordingId ||
-               'mock-meeting-id';
+               null;
     }
 
     /**

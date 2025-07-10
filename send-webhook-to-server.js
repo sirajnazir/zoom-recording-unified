@@ -98,9 +98,9 @@ function createWebhookPayload(recording) {
     return payload;
 }
 
-function generateWebhookSignature(payload, secret) {
+function generateWebhookSignature(payload, secret, timestamp) {
     // Zoom webhook signature format
-    const message = `v0:${Date.now()}:${JSON.stringify(payload)}`;
+    const message = `v0:${timestamp}:${JSON.stringify(payload)}`;
     const hash = crypto.createHmac('sha256', secret).update(message).digest('hex');
     return `v0=${hash}`;
 }
@@ -114,15 +114,16 @@ async function sendWebhookToServer(webhookPayload) {
     console.log(`   Files: ${webhookPayload.payload.object.recording_files.length}`);
     
     try {
-        // Generate signature
-        const signature = generateWebhookSignature(webhookPayload, WEBHOOK_SECRET);
+        // Generate signature with timestamp
+        const timestamp = Date.now().toString();
+        const signature = generateWebhookSignature(webhookPayload, WEBHOOK_SECRET, timestamp);
         
         // Send webhook
         const response = await axios.post(WEBHOOK_URL, webhookPayload, {
             headers: {
                 'Content-Type': 'application/json',
                 'x-zm-signature': signature,
-                'x-zm-request-timestamp': Date.now().toString()
+                'x-zm-request-timestamp': timestamp
             },
             timeout: 300000 // 5 minutes
         });
