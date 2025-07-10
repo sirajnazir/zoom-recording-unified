@@ -390,7 +390,7 @@ class CompleteSmartNameStandardizer {
     async standardizeName(input, context = {}) {
         try {
             if (!input || typeof input !== 'string') {
-                return this.createErrorResult(input);
+                return this.createErrorResult(input, null, context.dataSource || context.data_source || context.source);
             }
             // Build recording object
             const recording = {
@@ -452,7 +452,8 @@ class CompleteSmartNameStandardizer {
                 date: this.getDate(context),
                 meetingId: context.id || context.meeting_id,
                 uuid: uuid,
-                topic: recording.topic
+                topic: recording.topic,
+                dataSource: context.dataSource || context.data_source || context.source
             });
             // Calculate confidence
             const confidence = this.calculateConfidence(components, sessionType);
@@ -470,7 +471,7 @@ class CompleteSmartNameStandardizer {
                 raw: input
             };
         } catch (error) {
-            return this.createErrorResult(input, error);
+            return this.createErrorResult(input, error, context.dataSource || context.data_source || context.source);
         }
     }
     
@@ -1046,10 +1047,24 @@ class CompleteSmartNameStandardizer {
     
     /**
      * Build standardized folder name
-     * Format: {SessionType}_{coach}_{student}_Wk{number}_{date}_M:{meetingId}U:{uuid}
+     * Format: {SessionType}_{indicator}_{coach}_{student}_Wk{number}_{date}_M:{meetingId}U:{uuid}
+     * Where indicator is: A (Zoom API), B (Google Drive), or C (Webhook)
      * Always use base64 UUID for the U: part
      */
-    buildStandardizedFolderName({ coach, student, weekNumber, sessionType, date, meetingId, uuid, topic }) {
+    buildStandardizedFolderName({ coach, student, weekNumber, sessionType, date, meetingId, uuid, topic, dataSource }) {
+        // Determine data source indicator
+        let indicator = '';
+        if (dataSource) {
+            const source = dataSource.toLowerCase();
+            if (source.includes('zoom') && (source.includes('api') || source.includes('cloud') || source.includes('batch'))) {
+                indicator = 'A';
+            } else if (source.includes('google') || source.includes('drive')) {
+                indicator = 'B';
+            } else if (source.includes('webhook')) {
+                indicator = 'C';
+            }
+        }
+        
         // Only use base64 UUID for naming
         let safeUuid = uuid;
         if (this.isHexUuid(uuid)) {
@@ -1063,7 +1078,7 @@ class CompleteSmartNameStandardizer {
         if (sessionType === 'GamePlan') {
             const studentFirstName = student.split(' ')[0];
             const parts = [
-                'Coaching_GamePlan',
+                `Coaching_GamePlan${indicator ? '_' + indicator : ''}`,
                 'Jenny',
                 studentFirstName !== 'Unknown' ? studentFirstName : 'Unknown',
                 'Wk1',
@@ -1074,7 +1089,7 @@ class CompleteSmartNameStandardizer {
         }
         if (sessionType === 'TRIVIAL') {
             const parts = [
-                'TRIVIAL',
+                `TRIVIAL${indicator ? '_' + indicator : ''}`,
                 coach.replace(/\s+/g, '') !== 'Unknown' ? coach.replace(/\s+/g, '') : 'unknown',
                 student.split(' ')[0] !== 'Unknown' ? student.split(' ')[0] : 'Unknown',
                 date,
@@ -1085,22 +1100,22 @@ class CompleteSmartNameStandardizer {
         const parts = [];
         switch (sessionType) {
             case 'SAT':
-                parts.push('SAT');
+                parts.push(`SAT${indicator ? '_' + indicator : ''}`);
                 break;
             case 'Admin':
-                parts.push('MISC');
+                parts.push(`MISC${indicator ? '_' + indicator : ''}`);
                 break;
             case 'MISC':
                 if (topic && topic.toLowerCase().includes('personal meeting room') && 
                     coach && coach !== 'Unknown' && 
                     student && student !== 'Unknown') {
-                    parts.push('NO_SHOW');
+                    parts.push(`NO_SHOW${indicator ? '_' + indicator : ''}`);
                 } else {
-                    parts.push('MISC');
+                    parts.push(`MISC${indicator ? '_' + indicator : ''}`);
                 }
                 break;
             default:
-                parts.push('Coaching');
+                parts.push(`Coaching${indicator ? '_' + indicator : ''}`);
         }
         const coachName = coach.replace(/\s+/g, '');
         parts.push(coachName !== 'Unknown' ? coachName : 'unknown');
@@ -1280,9 +1295,23 @@ class CompleteSmartNameStandardizer {
     /**
      * Create error result
      */
-    createErrorResult(input, error = null) {
+    createErrorResult(input, error = null, dataSource = null) {
+        // Determine indicator based on data source
+        let indicator = '';
+        if (dataSource) {
+            const source = dataSource.toLowerCase();
+            if (source.includes('zoom') && (source.includes('api') || source.includes('cloud') || source.includes('batch'))) {
+                indicator = '_A';
+            } else if (source.includes('google') || source.includes('drive')) {
+                indicator = '_B';
+            } else if (source.includes('webhook')) {
+                indicator = '_C';
+            }
+        }
+        
+        const errorName = `MISC${indicator}_unknown_Unknown_WkUnknown_` + new Date().toISOString().split('T')[0];
         return {
-            standardized: 'MISC_unknown_Unknown_WkUnknown_' + new Date().toISOString().split('T')[0],
+            standardized: errorName,
             confidence: 0,
             original: input || '',
             method: 'error',
@@ -1295,7 +1324,7 @@ class CompleteSmartNameStandardizer {
             },
             folderCategory: 'misc',
             sessionType: 'MISC',
-            standardizedName: 'MISC_unknown_Unknown_WkUnknown_' + new Date().toISOString().split('T')[0],
+            standardizedName: errorName,
             error: error
         };
     }

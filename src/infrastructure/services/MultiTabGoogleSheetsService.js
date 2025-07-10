@@ -860,8 +860,8 @@ class MultiTabGoogleSheetsService {
             // File management
             driveFolder: fileManagement.driveFolder || standardizedNameWithSuffix,
             driveFolderId: fileManagement.driveFolderId || '',
-            videoFileId: fileManagement.driveFileIds?.video || '',
-            transcriptFileId: fileManagement.driveFileIds?.transcript || '',
+            videoFileId: (typeof fileManagement.driveFileIds?.video === 'object' ? fileManagement.driveFileIds.video.id : fileManagement.driveFileIds?.video) || processedData.videoFileId || '',
+            transcriptFileId: (typeof fileManagement.driveFileIds?.transcript === 'object' ? fileManagement.driveFileIds.transcript.id : fileManagement.driveFileIds?.transcript) || processedData.transcriptFileId || '',
             driveLink: fileManagement.driveLink || '',
             
             // Processing metadata
@@ -1188,8 +1188,15 @@ class MultiTabGoogleSheetsService {
             this.logger.info(`Determining data source - Source: ${source}, original.dataSource: ${original.dataSource}`);
             
             if (source === 'Comprehensive Processing' || source === 'Reprocessing') {
-                // This is from batch processing, use 'zoom-api'
-                dataSource = 'zoom-api';
+                // Check if original recording has a dataSource
+                if (original.dataSource === 'webhook') {
+                    dataSource = 'webhook';
+                } else if (original.dataSource === 'google-drive') {
+                    dataSource = 'google-drive';
+                } else {
+                    // Default to zoom-api for batch processing
+                    dataSource = 'zoom-api';
+                }
             } else if (source === 'Google Drive Import - Full Pipeline' || 
                       original.dataSource === 'google-drive' || 
                       original.dataSource === 'Google Drive Import' || 

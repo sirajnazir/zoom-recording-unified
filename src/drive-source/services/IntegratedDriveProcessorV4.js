@@ -157,7 +157,8 @@ class IntegratedDriveProcessorV4 {
               date: recording.start_time,
               weekNumber: extractedMetadata.weekNumber,
               hostEmail: recording.host_email,
-              duration: recording.duration
+              duration: recording.duration,
+              dataSource: recording.dataSource
             }
           );
           
@@ -545,29 +546,19 @@ class IntegratedDriveProcessorV4 {
    * Build comprehensive processed data matching the main pipeline structure
    */
   buildComprehensiveProcessedData(recording, nameAnalysis, weekAnalysis, aiInsights, outcomes, files, driveResult, enhancedMetadata, category) {
-    // Build the full standardized name with all components
-    const sessionType = nameAnalysis.components?.sessionType || category || 'Coaching';
-    const coach = nameAnalysis.components?.coach || 'Unknown';
-    const student = nameAnalysis.components?.student || 'Unknown';
-    const weekNumber = weekAnalysis.weekNumber || '00';
-    const date = recording.start_time.split('T')[0];
-    
-    // Get program cycle from recording metadata
-    const programCycle = recording._programCycle || enhancedMetadata.programCycle;
-    
-    // Format: SessionType_Coach_Student_[PC#_]WkXX_YYYY-MM-DD
-    let fullStandardizedName;
-    if (programCycle && programCycle > 1) {
-      fullStandardizedName = `${sessionType}_${coach}_${student}_PC${programCycle}_Wk${weekNumber.toString().padStart(2, '0')}_${date}`;
-    } else {
-      fullStandardizedName = `${sessionType}_${coach}_${student}_Wk${weekNumber.toString().padStart(2, '0')}_${date}`;
-    }
+    // Use the buildFullStandardizedName method to get the name with data source indicator
+    const fullStandardizedName = this.buildFullStandardizedName(
+      nameAnalysis, 
+      weekAnalysis, 
+      recording,
+      enhancedMetadata
+    );
     
     const processedData = {
       // Core identifiers
       uuid: recording.uuid,
       fingerprint: this.generateFingerprint(recording),
-      recordingDate: date,
+      recordingDate: recording.start_time.split('T')[0],
       
       // Name and standardization
       rawName: recording.topic,
@@ -667,7 +658,7 @@ class IntegratedDriveProcessorV4 {
       totalFileSize: Object.values(files).reduce((sum, f) => sum + (parseInt(f.size) || 0), 0),
       
       // Program cycle metadata (for renewal students)
-      programCycle: programCycle || null,
+      programCycle: recording._programCycle || enhancedMetadata.programCycle || null,
       isRenewalStudent: recording._isRenewalStudent || false
     };
 
@@ -830,7 +821,9 @@ class IntegratedDriveProcessorV4 {
       // Preserve metadata
       _sessionType: metadata.sessionType,
       _programCycle: metadata.programCycle,
-      _isRenewalStudent: metadata.isRenewalStudent
+      _isRenewalStudent: metadata.isRenewalStudent,
+      // Data source for indicators
+      dataSource: session.dataSource || 'google-drive'
     };
   }
 
@@ -972,16 +965,30 @@ class IntegratedDriveProcessorV4 {
    * Build full standardized name for folder creation
    */
   buildFullStandardizedName(nameAnalysis, weekAnalysis, recording, metadata) {
+    // If we have the name standardizer, use its buildStandardizedFolderName method
+    // which properly handles data source indicators
+    if (this.completeSmartNameStandardizer) {
+      return this.completeSmartNameStandardizer.buildStandardizedFolderName({
+        coach: nameAnalysis.components?.coach || 'Unknown',
+        student: nameAnalysis.components?.student || 'Unknown',
+        weekNumber: weekAnalysis.weekNumber || '00',
+        sessionType: nameAnalysis.components?.sessionType || 'Coaching',
+        date: recording.start_time.split('T')[0],
+        meetingId: recording.meeting_id,
+        uuid: recording.uuid,
+        topic: recording.topic,
+        dataSource: recording.dataSource
+      });
+    }
+    
+    // Fallback if no standardizer available
     const sessionType = nameAnalysis.components?.sessionType || 'Coaching';
     const coach = nameAnalysis.components?.coach || 'Unknown';
     const student = nameAnalysis.components?.student || 'Unknown';
     const weekNumber = weekAnalysis.weekNumber || '00';
     const date = recording.start_time.split('T')[0];
-    
-    // Get program cycle from metadata
     const programCycle = metadata.programCycle;
     
-    // Build name with PC if applicable
     let fullName;
     if (programCycle && programCycle > 1) {
       fullName = `${sessionType}_${coach}_${student}_PC${programCycle}_Wk${weekNumber.toString().padStart(2, '0')}_${date}`;

@@ -1,0 +1,104 @@
+{
+  "timestamp": "2025-07-07T11:38:55.364Z",
+  "summary": {
+    "totalUnknown": 370,
+    "analyzedSample": 6,
+    "extractableFromHierarchy": 0,
+    "emailSubjectFolders": 0,
+    "categoryBreakdown": {
+      "None": 370
+    }
+  },
+  "recordings": [
+    {
+      "standardizedName": "Coaching_B_Andrew_Rayaan_Wk08_2024-06-19_M:b0515a1b4dfad3a6U:b0515a1b4dfad3a6",
+      "rawName": "Andrew & Rayaan",
+      "currentCoach": "Unknown",
+      "currentStudent": "Unknown",
+      "category": "",
+      "fullPath": "",
+      "hierarchyExtraction": {
+        "coach": null,
+        "student": null,
+        "confidence": 0
+      },
+      "isEmailSubject": false,
+      "matchesPattern": false
+    },
+    {
+      "standardizedName": "Coaching_B_Andrew_Rayaan_Wk09_2024-07-27_M:a3fc89851b73ee9fU:a3fc89851b73ee9f",
+      "rawName": "Andrew & Rayaan",
+      "currentCoach": "Unknown",
+      "currentStudent": "Unknown",
+      "category": "",
+      "fullPath": "",
+      "hierarchyExtraction": {
+        "coach": null,
+        "student": null,
+        "confidence": 0
+      },
+      "isEmailSubject": false,
+      "matchesPattern": false
+    },
+    {
+      "standardizedName": "Coaching_B_Andrew_Rayaan_Wk10_2024-10-02_M:98a83d9498ba2e54U:98a83d9498ba2e54",
+      "rawName": "Andrew & Rayaan",
+      "currentCoach": "Unknown",
+      "currentStudent": "Unknown",
+      "category": "",
+      "fullPath": "",
+      "hierarchyExtraction": {
+        "coach": null,
+        "student": null,
+        "confidence": 0
+      },
+      "isEmailSubject": false,
+      "matchesPattern": false
+    },
+    {
+      "standardizedName": "Coaching_B_Rishi_Aaryan_Wk10_2024-11-15_M:72f93f8cb3cce428U:72f93f8cb3cce428",
+      "rawName": "Rishi & Aaryan",
+      "currentCoach": "Unknown",
+      "currentStudent": "Unknown",
+      "category": "",
+      "fullPath": "",
+      "hierarchyExtraction": {
+        "coach": null,
+        "student": null,
+        "confidence": 0
+      },
+      "isEmailSubject": false,
+      "matchesPattern": false
+    },
+    {
+      "standardizedName": "Coaching_B_Rishi_Aaryan_Wk11_2024-12-06_M:921d312daf270acfU:921d312daf270acf",
+      "rawName": "Rishi & Aaryan",
+      "currentCoach": "Unknown",
+      "currentStudent": "Unknown",
+      "category": "",
+      "fullPath": "",
+      "hierarchyExtraction": {
+        "coach": null,
+        "student": null,
+        "confidence": 0
+      },
+      "isEmailSubject": false,
+      "matchesPattern": false
+    },
+    {
+      "standardizedName": "Coaching_B_unknown_Unknown_Wk01_2025-07-07_M:a76329e64284b419U:a76329e64284b419",
+      "rawName": "Unknown Session",
+      "currentCoach": "Unknown",
+      "currentStudent": "Unknown",
+      "category": "",
+      "fullPath": "",
+      "hierarchyExtraction": {
+        "coach": null,
+        "student": null,
+        "confidence": 0
+      },
+      "isEmailSubject": false,
+      "matchesPattern": false
+    }
+  ]
+}

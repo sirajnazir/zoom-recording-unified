@@ -565,8 +565,8 @@ class DualTabGoogleSheetsService {
             // File management - use processed file data
             driveFolder: fileManagement.driveFolder || standardizedNameWithSuffix,
             driveFolderId: fileManagement.driveFolderId || '',
-            videoFileId: fileManagement.driveFileIds?.video || '',
-            transcriptFileId: fileManagement.driveFileIds?.transcript || '',
+            videoFileId: fileManagement.driveFileIds?.video?.id || fileManagement.driveFileIds?.video || processedData.videoFileId || '',
+            transcriptFileId: fileManagement.driveFileIds?.transcript?.id || fileManagement.driveFileIds?.transcript || processedData.transcriptFileId || '',
             driveLink: fileManagement.driveLink || '',
             
             // Processing metadata
