@@ -37,11 +37,20 @@ class WebhookFileDownloader {
 
       // Parse the download URL to check if it needs authentication
       const urlObj = new URL(downloadUrl);
-      const needsAuth = urlObj.searchParams.get('access_token') || accessToken;
+      const hasEmbeddedToken = urlObj.searchParams.has('access_token');
+      
+      let finalUrl = downloadUrl;
+      
+      // For webhook URLs, add the access token as a query parameter if not already present
+      if (!hasEmbeddedToken && accessToken) {
+        urlObj.searchParams.set('access_token', accessToken);
+        finalUrl = urlObj.toString();
+        this.logger.info('Added access token to URL as query parameter');
+      }
 
       // Configure axios with authentication
       const axiosConfig = {
-        url: downloadUrl,
+        url: finalUrl,
         method: 'GET',
         responseType: 'stream',
         timeout: this.downloadTimeout,
@@ -52,20 +61,11 @@ class WebhookFileDownloader {
         }
       };
 
-      // Add authentication if needed
-      if (needsAuth) {
-        // If access_token is in URL, axios will handle it
-        // If provided separately, add as Bearer token
-        if (accessToken && !urlObj.searchParams.get('access_token')) {
-          axiosConfig.headers['Authorization'] = `Bearer ${accessToken}`;
-        }
-      }
-
       // Log request details (without sensitive token)
       this.logger.debug('Download request config:', {
-        url: downloadUrl.replace(/access_token=[^&]+/, 'access_token=***'),
+        url: finalUrl.replace(/access_token=[^&]+/, 'access_token=***'),
         method: axiosConfig.method,
-        hasAuth: !!needsAuth
+        hasAuth: hasEmbeddedToken || !!accessToken
       });
 
       const response = await axios(axiosConfig);

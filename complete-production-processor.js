@@ -40,6 +40,7 @@ const options = {
     toDate: null,
     dateRange: null, // NEW: Number of days for date range
     limit: 1,
+    skip: 0, // NEW: Number of records to skip
     dryRun: false,
     lightweight: false, // Skip heavy media files (video, audio)
     cloudLightweight: false, // NEW: Process all cloud recordings but skip video/audio files
@@ -63,7 +64,9 @@ for (let i = 0; i < args.length; i++) {
     
     // Handle --key=value format
     if (arg.includes('=')) {
-        const [key, value] = arg.split('=');
+        const equalIndex = arg.indexOf('=');
+        const key = arg.substring(0, equalIndex);
+        const value = arg.substring(equalIndex + 1);
         console.log(`🔍 DEBUG: Found key=value format: ${key}=${value}`);
         
         switch (key) {
@@ -405,8 +408,18 @@ class ProductionZoomProcessor {
         this.originalConsoleInfo = console.info;
         this.originalConsoleDebug = console.debug;
         
-        // Create write stream for log file
+        // Create write stream for log file with error handling
         this.logStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
+        
+        // Add error handler to prevent uncaught EPIPE errors
+        this.logStream.on('error', (error) => {
+            if (error.code === 'EPIPE') {
+                // Silently ignore EPIPE errors
+                this.logStream.destroyed = true;
+            } else {
+                this.originalConsoleError('Log stream error:', error);
+            }
+        });
         
         // Helper function to format log entries
         const formatLogEntry = (level, ...args) => {
@@ -435,30 +448,60 @@ class ProductionZoomProcessor {
             return `[${timestamp}] [${level}] ${message}\n`;
         };
         
-        // Override console methods to capture output
+        // Override console methods to capture output with error handling
         console.log = (...args) => {
             this.originalConsoleLog(...args);
-            this.logStream.write(formatLogEntry('INFO', ...args));
+            try {
+                if (this.logStream && !this.logStream.destroyed) {
+                    this.logStream.write(formatLogEntry('INFO', ...args));
+                }
+            } catch (error) {
+                // Silently ignore write errors to prevent EPIPE
+            }
         };
         
         console.error = (...args) => {
             this.originalConsoleError(...args);
-            this.logStream.write(formatLogEntry('ERROR', ...args));
+            try {
+                if (this.logStream && !this.logStream.destroyed) {
+                    this.logStream.write(formatLogEntry('ERROR', ...args));
+                }
+            } catch (error) {
+                // Silently ignore write errors to prevent EPIPE
+            }
         };
         
         console.warn = (...args) => {
             this.originalConsoleWarn(...args);
-            this.logStream.write(formatLogEntry('WARN', ...args));
+            try {
+                if (this.logStream && !this.logStream.destroyed) {
+                    this.logStream.write(formatLogEntry('WARN', ...args));
+                }
+            } catch (error) {
+                // Silently ignore write errors to prevent EPIPE
+            }
         };
         
         console.info = (...args) => {
             this.originalConsoleInfo(...args);
-            this.logStream.write(formatLogEntry('INFO', ...args));
+            try {
+                if (this.logStream && !this.logStream.destroyed) {
+                    this.logStream.write(formatLogEntry('INFO', ...args));
+                }
+            } catch (error) {
+                // Silently ignore write errors to prevent EPIPE
+            }
         };
         
         console.debug = (...args) => {
             this.originalConsoleDebug(...args);
-            this.logStream.write(formatLogEntry('DEBUG', ...args));
+            try {
+                if (this.logStream && !this.logStream.destroyed) {
+                    this.logStream.write(formatLogEntry('DEBUG', ...args));
+                }
+            } catch (error) {
+                // Silently ignore write errors to prevent EPIPE
+            }
         };
         
         // Log the start of console capture
@@ -1231,7 +1274,9 @@ class ProductionZoomProcessor {
                                 }
                             }
                         } else {
-                            console.log('⚠️ Download failed, but continuing with processing...');
+                            console.log('❌ Download failed: downloadResult.success was false');
+                            // Don't continue with processing if download explicitly failed
+                            throw new Error('Download failed: Zoom API download returned success=false');
                         }
                     }
                 }
@@ -1239,6 +1284,39 @@ class ProductionZoomProcessor {
                 console.log('⚠️ Failed to download recording files:', error.message);
                 console.log('✅ Downloaded files:', Object.keys(downloadedFiles).join(', '));
             }
+            
+            // VALIDATION: Check if critical files were actually downloaded
+            const downloadedFileCount = Object.keys(downloadedFiles).length;
+            const hasCriticalFiles = downloadedFiles.transcript || downloadedFiles.video || downloadedFiles.audio;
+            
+            if (downloadedFileCount === 0) {
+                console.log('❌ DOWNLOAD VALIDATION FAILED: No files were downloaded');
+                console.log(`   Recording ID: ${recording.id}`);
+                console.log(`   Recording Topic: ${recording.topic}`);
+                throw new Error('Download validation failed: No files were downloaded from any source');
+            }
+            
+            if (!hasCriticalFiles) {
+                console.log('⚠️ WARNING: No critical files (transcript, video, or audio) were downloaded');
+                console.log(`   Downloaded files: ${Object.keys(downloadedFiles).join(', ')}`);
+                
+                // In cloud lightweight mode, we expect at least a transcript
+                if (cloudLightweight && !downloadedFiles.transcript) {
+                    console.log('❌ DOWNLOAD VALIDATION FAILED: Expected transcript in cloud lightweight mode');
+                    throw new Error('Download validation failed: Expected transcript in cloud lightweight mode but none was downloaded');
+                }
+                
+                // For non-lightweight mode, we should have at least one critical file
+                if (!cloudLightweight && !lightweight) {
+                    console.log('❌ DOWNLOAD VALIDATION FAILED: No critical files in standard mode');
+                    throw new Error('Download validation failed: No critical files (transcript, video, or audio) were downloaded');
+                }
+            }
+            
+            console.log(`✅ Download validation passed:`);
+            console.log(`   Total files downloaded: ${downloadedFileCount}`);
+            console.log(`   Critical files present: ${hasCriticalFiles ? 'Yes' : 'No'}`);
+            console.log(`   Files: ${Object.keys(downloadedFiles).join(', ')}`);
             
             // Debug: Log transcript and chat content lengths
             console.log(`📝 Transcript content length: ${transcriptContent.length} characters`);
@@ -1362,8 +1440,11 @@ class ProductionZoomProcessor {
                 nameAnalysis.components.sessionType = 'Coaching';
             }
             
-            // FIX: Regenerate standardized name with correct sessionType
+            // FIX: Regenerate standardized name with correct sessionType and dataSource
             if (nameStandardizer) {
+                // Determine dataSource - Zoom API for batch processing
+                const dataSource = recording.source || recording.dataSource || 'zoom-api';
+                
                 const regeneratedName = nameStandardizer.buildStandardizedFolderName({
                     coach: nameAnalysis.components?.coach || 'unknown',
                     student: nameAnalysis.components?.student || 'Unknown',
@@ -1372,10 +1453,11 @@ class ProductionZoomProcessor {
                     date: recording.start_time.split('T')[0],
                     meetingId: recording.id,
                     uuid: recording.uuid,
-                    topic: recording.topic
+                    topic: recording.topic,
+                    dataSource: dataSource
                 });
                 nameAnalysis.standardizedName = regeneratedName;
-                console.log(`🔧 FIX: Regenerated standardized name with correct category: ${regeneratedName}`);
+                console.log(`🔧 FIX: Regenerated standardized name with correct category and source: ${regeneratedName}`);
             }
             
             console.log(`📂 Recording Category: ${recordingCategory}`);
@@ -1447,7 +1529,8 @@ class ProductionZoomProcessor {
                         date: recording.start_time.split('T')[0],
                         meetingId: recording.id,
                         uuid: recording.uuid,
-                        topic: recording.topic
+                        topic: recording.topic,
+                        dataSource: recording.source || recording.dataSource || 'zoom-api'
                     });
                     
                     // Update the name analysis with corrected folder name
@@ -1994,8 +2077,8 @@ class ProductionZoomProcessor {
                     processedRecording.driveFolder = driveLink || '';
                     processedRecording.driveFolderId = driveFolderId || '';
                     processedRecording.driveLink = driveLink || '';
-                    processedRecording.videoFileId = driveFileIds?.video || '';
-                    processedRecording.transcriptFileId = driveFileIds?.transcript || '';
+                    processedRecording.videoFileId = driveFileIds?.video?.id || driveFileIds?.video || '';
+                    processedRecording.transcriptFileId = driveFileIds?.transcript?.id || driveFileIds?.transcript || '';
                     
                     this.logger.info('✅ Drive organization completed successfully', {
                         recordingId: recording.id,
@@ -2046,6 +2129,10 @@ class ProductionZoomProcessor {
             this.logger.info(`✅ Recording processed successfully: ${recordingId} (${processingTime}ms)`);
             this.logger.info(`   - Name: ${nameAnalysis.standardizedName}`);
             this.logger.info(`   - Week: ${weekAnalysis.weekNumber}`);
+            this.logger.info(`   - Downloaded files: ${Object.keys(downloadedFiles).join(', ')}`);
+            this.logger.info(`   - Has transcript: ${!!downloadedFiles.transcript}`);
+            this.logger.info(`   - Has video: ${!!downloadedFiles.video}`);
+            this.logger.info(`   - Has audio: ${!!downloadedFiles.audio}`);
             this.logger.info(`   - Category: ${recordingCategory}`);
             this.logger.info(`   - AI Insights: ${!!aiInsights}`);
             this.logger.info(`   - Outcomes: ${outcomes.length}`);
@@ -2083,7 +2170,15 @@ class ProductionZoomProcessor {
                 nameAnalysis,
                 weekAnalysis,
                 category: recordingCategory,
-                sheetsUpdated: true
+                sheetsUpdated: true,
+                downloadedFiles: Object.keys(downloadedFiles),
+                fileDetails: {
+                    hasTranscript: !!downloadedFiles.transcript,
+                    hasVideo: !!downloadedFiles.video,
+                    hasAudio: !!downloadedFiles.audio,
+                    hasChat: !!downloadedFiles.chat,
+                    totalFiles: Object.keys(downloadedFiles).length
+                }
             };
             
         } catch (error) {
@@ -2092,11 +2187,22 @@ class ProductionZoomProcessor {
             
             this.logger.error(`❌ Failed to process recording: ${recordingId}`, error);
             
+            // Log download validation specific errors with more detail
+            if (error.message.includes('Download validation failed') || error.message.includes('Download failed')) {
+                this.logger.error(`   - Download validation error: ${error.message}`);
+                this.logger.error(`   - Downloaded files: ${Object.keys(downloadedFiles).join(', ') || 'none'}`);
+                this.logger.error(`   - Recording topic: ${recording.topic}`);
+                this.logger.error(`   - Recording date: ${recording.start_time}`);
+                this.logger.error(`   - Recording duration: ${recording.duration} seconds`);
+            }
+            
             return {
                 success: false,
                 recordingId,
                 error: error.message,
-                stack: error.stack
+                stack: error.stack,
+                downloadedFiles: Object.keys(downloadedFiles),
+                failureReason: error.message.includes('Download') ? 'download_failure' : 'processing_failure'
             };
         }
     }
@@ -2220,6 +2326,11 @@ class ProductionZoomProcessor {
                 // 🚪 CRITICAL GATE 3: Check if recording already exists in sheets using ORIGINAL UUID
                 try {
                     console.log(`🔍 [GATE 3] Checking if recording exists in sheets for ORIGINAL UUID: ${originalUuid}`);
+                    
+                    // Add delay to avoid Google Sheets API quota limits (60 requests per minute)
+                    // With 4 checks per recording, we need at least 4 seconds between recordings
+                    await new Promise(resolve => setTimeout(resolve, 4500)); // 4.5 seconds delay
+                    
                     const googleSheetsService = this.container.resolve('googleSheetsService');
                     console.log(`🔍 [GATE 3] GoogleSheetsService resolved: ${googleSheetsService ? 'YES' : 'NO'}`);
                     
@@ -2237,18 +2348,21 @@ class ProductionZoomProcessor {
                         
                         // If not found, try with hex format (most common in sheets)
                         if (!existingCheck.exists && uuidFormats.hex) {
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between checks
                             console.log(`🔍 [GATE 3] Trying hex UUID: ${uuidFormats.hex}`);
                             existingCheck = await googleSheetsService.checkRecordingExists(uuidFormats.hex);
                         }
                         
                         // If not found, try with hex with dashes format
                         if (!existingCheck.exists && uuidFormats.hexWithDashes) {
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between checks
                             console.log(`🔍 [GATE 3] Trying hex with dashes UUID: ${uuidFormats.hexWithDashes}`);
                             existingCheck = await googleSheetsService.checkRecordingExists(uuidFormats.hexWithDashes);
                         }
                         
                         // If not found, try with base64 format
                         if (!existingCheck.exists && uuidFormats.base64) {
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between checks
                             console.log(`🔍 [GATE 3] Trying base64 UUID: ${uuidFormats.base64}`);
                             existingCheck = await googleSheetsService.checkRecordingExists(uuidFormats.base64);
                         }
@@ -2405,6 +2519,14 @@ class ProductionZoomProcessor {
         // ENHANCEMENT: Include log file information in final report
         const logFileInfo = await this._getLogFileInfo();
         
+        // Calculate download failure statistics
+        const downloadFailures = this.results.details.filter(d => 
+            !d.success && d.failureReason === 'download_failure'
+        ).length;
+        const processingFailures = this.results.details.filter(d => 
+            !d.success && d.failureReason === 'processing_failure'
+        ).length;
+        
         const report = {
             timestamp: new Date().toISOString(),
             summary: {
@@ -2412,7 +2534,12 @@ class ProductionZoomProcessor {
                 successful: this.results.successful,
                 failed: this.results.failed,
                 skipped: this.results.skipped,
-                successRate: this.results.total > 0 ? (this.results.successful / this.results.total * 100).toFixed(2) : 0
+                successRate: this.results.total > 0 ? (this.results.successful / this.results.total * 100).toFixed(2) : 0,
+                failures: {
+                    download: downloadFailures,
+                    processing: processingFailures,
+                    downloadFailureRate: this.results.total > 0 ? (downloadFailures / this.results.total * 100).toFixed(2) : 0
+                }
             },
             processingTime: Date.now() - this.startTime,
             details: this.results.details,
@@ -3263,6 +3390,21 @@ class ProductionZoomProcessor {
         
         if (result.success) {
             console.log(`⏱️ Processing Time: ${result.processingTime || 'Unknown'}ms`);
+            
+            // Display download information
+            if (result.downloadedFiles) {
+                console.log(`📥 Downloaded Files: ${result.downloadedFiles.length} files`);
+                console.log(`   - Files: ${result.downloadedFiles.join(', ')}`);
+            }
+            
+            if (result.fileDetails) {
+                console.log(`📄 File Details:`);
+                console.log(`   - Has Transcript: ${result.fileDetails.hasTranscript ? 'Yes' : 'No'}`);
+                console.log(`   - Has Video: ${result.fileDetails.hasVideo ? 'Yes' : 'No'}`);
+                console.log(`   - Has Audio: ${result.fileDetails.hasAudio ? 'Yes' : 'No'}`);
+                console.log(`   - Total Files: ${result.fileDetails.totalFiles}`);
+            }
+            
             if (result.aiInsights) {
                 console.log(`🤖 AI Insights: Generated`);
             }
@@ -3274,6 +3416,13 @@ class ProductionZoomProcessor {
             }
         } else {
             console.log(`❌ Error: ${result.error || 'Unknown error'}`);
+            
+            // Display download failure information
+            if (result.failureReason === 'download_failure') {
+                console.log(`📥 Download Failure Details:`);
+                console.log(`   - Downloaded Files: ${result.downloadedFiles ? result.downloadedFiles.join(', ') : 'none'}`);
+                console.log(`   - Failure Type: ${result.failureReason}`);
+            }
         }
         
         console.log('='.repeat(80));

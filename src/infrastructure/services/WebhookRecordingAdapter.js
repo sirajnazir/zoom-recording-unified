@@ -9,6 +9,7 @@ const { Logger } = require('../../shared/logging/logger');
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
+const { createWriteStream } = require('fs');
 
 class WebhookRecordingAdapter {
     constructor(container) {
@@ -65,6 +66,7 @@ class WebhookRecordingAdapter {
             
             // Processing metadata
             source: 'webhook',
+            dataSource: 'webhook',  // Ensure dataSource is set for indicators
             webhook_received_at: new Date().toISOString(),
             processing_status: 'pending'
         };
@@ -225,22 +227,26 @@ class WebhookRecordingAdapter {
                     const urlObj = new URL(file.download_url);
                     const hasEmbeddedToken = urlObj.searchParams.has('access_token');
                     
+                    let finalUrl = file.download_url;
+                    
+                    // Add access token to URL if not already present
+                    if (!hasEmbeddedToken && recording.download_access_token) {
+                        urlObj.searchParams.set('access_token', recording.download_access_token);
+                        finalUrl = urlObj.toString();
+                        this.logger.info(`Added webhook access token to URL`);
+                    }
+                    
                     const headers = {
                         'User-Agent': 'zoom-recording-processor/1.0'
                     };
-                    
-                    // Only add Bearer token if URL doesn't have embedded token
-                    if (recording.download_access_token && !hasEmbeddedToken) {
-                        headers['Authorization'] = `Bearer ${recording.download_access_token}`;
-                    }
 
                     this.logger.info(`Downloading webhook file: ${fileName}`);
-                    this.logger.debug(`Download URL: ${file.download_url.replace(/access_token=[^&]+/, 'access_token=***')}`);
-                    this.logger.debug(`Using Bearer token: ${!hasEmbeddedToken && !!recording.download_access_token}`);
+                    this.logger.debug(`Download URL: ${finalUrl.replace(/access_token=[^&]+/, 'access_token=***')}`);
+                    this.logger.debug(`Has access token: ${hasEmbeddedToken || !!recording.download_access_token}`);
                     
                     const response = await axios({
                         method: 'GET',
-                        url: file.download_url,
+                        url: finalUrl,
                         headers,
                         responseType: 'stream',
                         timeout: 300000, // 5 minutes timeout
@@ -248,7 +254,7 @@ class WebhookRecordingAdapter {
                         validateStatus: (status) => status < 500 // Accept redirects
                     });
 
-                    const writer = fs.createWriteStream(filePath);
+                    const writer = createWriteStream(filePath);
                     response.data.pipe(writer);
 
                     await new Promise((resolve, reject) => {
@@ -280,7 +286,125 @@ class WebhookRecordingAdapter {
             }
         }
 
+        // Check if all downloads failed
+        const allFailed = downloadResults.every(result => !result.success);
+        
+        // Check if failures are authentication-related (401/403)
+        const authFailures = downloadResults.filter(result => 
+            !result.success && (result.statusCode === 401 || result.statusCode === 403)
+        );
+        
+        // Only attempt fallback if we have auth failures or all downloads failed
+        if (allFailed && recording.id && authFailures.length > 0) {
+            this.logger.warn(`All webhook downloads failed (${authFailures.length} auth failures). Attempting fallback to Zoom API...`);
+            return await this.fallbackToZoomAPI(recording, downloadResults);
+        } else if (allFailed && recording.id) {
+            this.logger.warn('All downloads failed but no auth failures detected. Skipping API fallback.');
+        }
+        
         return downloadResults;
+    }
+
+    /**
+     * Fallback to Zoom API when webhook downloads fail
+     * @param {Object} recording - The recording object
+     * @param {Array} failedResults - The failed download results
+     * @returns {Array} Download results after fallback attempt
+     */
+    async fallbackToZoomAPI(recording, failedResults) {
+        try {
+            // Prevent infinite loops - check if we already tried API fallback
+            if (recording._fallbackAttempted) {
+                this.logger.warn('Fallback already attempted for this recording. Skipping to prevent loop.');
+                return failedResults;
+            }
+            
+            const zoomService = this.container.resolve('zoomService');
+            if (!zoomService) {
+                this.logger.error('ZoomService not available for fallback');
+                return failedResults;
+            }
+
+            this.logger.info(`Attempting to fetch recording ${recording.id} via Zoom API...`);
+            
+            // Mark that we attempted fallback to prevent loops
+            recording._fallbackAttempted = true;
+            
+            // Fetch the recording from Zoom API
+            const apiRecording = await zoomService.getRecording(recording.id);
+            
+            if (!apiRecording || !apiRecording.recording_files) {
+                this.logger.error('No recording files found via Zoom API');
+                return failedResults;
+            }
+
+            this.logger.info(`Found ${apiRecording.recording_files.length} files via Zoom API. Attempting download...`);
+            
+            // Download files using Zoom API auth
+            const apiDownloadResults = [];
+            const token = await zoomService.getZoomToken();
+            
+            for (const file of apiRecording.recording_files) {
+                try {
+                    const fileName = `${recording.id}_${file.file_type}.${file.file_extension || this.getFileExtension(file.file_type)}`;
+                    const filePath = path.join(this.downloadDir, fileName);
+                    
+                    // Use bearer token authentication for API downloads
+                    const headers = {
+                        'Authorization': `Bearer ${token}`,
+                        'User-Agent': 'zoom-recording-processor/1.0'
+                    };
+
+                    this.logger.info(`Downloading via API: ${fileName}`);
+                    
+                    const response = await axios({
+                        method: 'GET',
+                        url: file.download_url,
+                        headers,
+                        responseType: 'stream',
+                        timeout: 300000, // 5 minutes timeout
+                        maxRedirects: 5,
+                        validateStatus: (status) => status < 500
+                    });
+
+                    const writer = createWriteStream(filePath);
+                    response.data.pipe(writer);
+
+                    await new Promise((resolve, reject) => {
+                        writer.on('finish', resolve);
+                        writer.on('error', reject);
+                    });
+
+                    apiDownloadResults.push({
+                        file_type: file.file_type,
+                        file_path: filePath,
+                        file_size: file.file_size,
+                        success: true,
+                        fallback_method: 'zoom_api'
+                    });
+
+                    this.logger.info(`Successfully downloaded via API: ${fileName}`);
+                } catch (error) {
+                    this.logger.error(`API download failed for ${file.file_type}:`, error.message);
+                    apiDownloadResults.push({
+                        file_type: file.file_type,
+                        success: false,
+                        error: error.message,
+                        statusCode: error.response?.status,
+                        fallback_method: 'zoom_api'
+                    });
+                }
+            }
+
+            // Log fallback results
+            const successCount = apiDownloadResults.filter(r => r.success).length;
+            this.logger.info(`Fallback download complete: ${successCount}/${apiDownloadResults.length} files downloaded successfully`);
+            
+            return apiDownloadResults;
+        } catch (error) {
+            this.logger.error('Error in Zoom API fallback:', error.message);
+            return failedResults;
+        }
     }
 
     /**
@@ -316,6 +440,15 @@ class WebhookRecordingAdapter {
             if (transformedRecording.download_access_token) {
                 const downloadResults = await this.downloadWebhookRecordingFiles(transformedRecording);
                 transformedRecording.webhook_download_results = downloadResults;
+                
+                // Log download summary
+                const successCount = downloadResults.filter(r => r.success).length;
+                const totalCount = downloadResults.length;
+                this.logger.info(`Download summary: ${successCount}/${totalCount} files downloaded successfully`);
+                
+                if (successCount === 0 && totalCount > 0) {
+                    this.logger.warn('No files were successfully downloaded for this recording');
+                }
             }
 
             // Process using the production processor

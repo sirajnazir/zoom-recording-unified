@@ -392,17 +392,26 @@ class ZoomService {
             
             // Build the download URL with token if needed
             let finalUrl = url;
+            const urlObj = new URL(url);
             
-            // Check if this is a webhook download URL but force API method instead
-            if (url.includes('/webhook_download/')) {
-                this.logger.info('Webhook URL detected, but using API download for cross-account access');
-                // Convert webhook URL to API URL
-                // webhook_download URLs need to be accessed with Bearer token for cross-account access
-                // Don't add passcode, use Bearer token authentication instead
+            // Check if this is a webhook download URL
+            const isWebhookUrl = url.includes('/webhook_download/');
+            
+            if (isWebhookUrl) {
+                this.logger.info('Webhook URL detected - using webhook authentication method');
+                
+                // For webhook URLs, check if access_token is already in the URL
+                const hasEmbeddedToken = urlObj.searchParams.has('access_token');
+                
+                if (!hasEmbeddedToken && downloadToken) {
+                    // Add the webhook download token to the URL
+                    urlObj.searchParams.set('access_token', downloadToken);
+                    finalUrl = urlObj.toString();
+                    this.logger.info('Added webhook download token to URL');
+                } else if (hasEmbeddedToken) {
+                    this.logger.info('Using existing access_token from webhook URL');
+                }
             }
-            
-            // Always use Bearer token for authentication (works across accounts)
-            this.logger.info('Using bearer token for download');
             
             const downloadOptions = {
                 method: 'GET',
@@ -416,9 +425,15 @@ class ZoomService {
                 }
             };
             
-            // Always add Authorization header with Bearer token
-            const token = await this.getZoomToken();
-            downloadOptions.headers['Authorization'] = `Bearer ${token}`;
+            // For non-webhook URLs, use Bearer token authentication
+            // For webhook URLs, only use Bearer if no access_token in URL
+            if (!isWebhookUrl || (!urlObj.searchParams.has('access_token') && !downloadToken)) {
+                const token = await this.getZoomToken();
+                downloadOptions.headers['Authorization'] = `Bearer ${token}`;
+                this.logger.info('Using Bearer token for authentication');
+            } else {
+                this.logger.info('Using webhook access_token for authentication');
+            }
             
             const response = await axios(downloadOptions);
             

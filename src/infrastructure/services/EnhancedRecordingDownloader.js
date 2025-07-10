@@ -34,6 +34,7 @@ class EnhancedRecordingDownloader extends EventEmitter {
      */
     async downloadRecordingFiles(recording, outputDir, options = {}) {
         const { lightweight = false, skipVideo = false, skipAudio = false } = options;
+        const downloadToken = recording.download_access_token || null;
         
         const results = {
             success: true,
@@ -103,7 +104,8 @@ class EnhancedRecordingDownloader extends EventEmitter {
                         file,
                         mappedType,
                         fileName: this.generateFileName(file, recording),
-                        filePath: path.join(outputDir, this.generateFileName(file, recording))
+                        filePath: path.join(outputDir, this.generateFileName(file, recording)),
+                        downloadToken: downloadToken
                     });
                 } else {
                     this.logger.warn(`No download URL for ${mappedType}`);
@@ -161,7 +163,11 @@ class EnhancedRecordingDownloader extends EventEmitter {
                     this.logger.info(`📥 [PARALLEL] Downloading ${mappedType}: ${fileName}`);
                     this.emit('downloadStart', { fileType: mappedType, fileName, method: 'parallel' });
                     
-                    await this.downloadFileWithRetry(file.download_url, filePath, this.maxRetries);
+                    await this.downloadFileWithRetry(file.download_url, filePath, {
+                        maxRetries: this.maxRetries,
+                        downloadToken: fileInfo.downloadToken,
+                        fileType: mappedType
+                    });
                     
                     results.files[mappedType] = filePath;
                     this.logger.info(`✅ [PARALLEL] Downloaded ${mappedType}: ${fileName}`);
@@ -195,7 +201,10 @@ class EnhancedRecordingDownloader extends EventEmitter {
                 this.logger.info(`🌊 [STREAMING] Downloading ${mappedType}: ${fileName}`);
                 this.emit('downloadStart', { fileType: mappedType, fileName, method: 'streaming' });
                 
-                await this.downloadFileStreaming(file.download_url, filePath);
+                await this.downloadFileStreaming(file.download_url, filePath, {
+                    downloadToken: fileInfo.downloadToken,
+                    fileType: mappedType
+                });
                 
                 results.files[mappedType] = filePath;
                 this.logger.info(`✅ [STREAMING] Downloaded ${mappedType}: ${fileName}`);
@@ -221,7 +230,10 @@ class EnhancedRecordingDownloader extends EventEmitter {
                 this.logger.info(`📥 [STANDARD] Downloading ${mappedType}: ${fileName}`);
                 this.emit('downloadStart', { fileType: mappedType, fileName, method: 'standard' });
                 
-                await this.downloadFile(file.download_url, filePath);
+                await this.downloadFile(file.download_url, filePath, {
+                    downloadToken: fileInfo.downloadToken,
+                    fileType: mappedType
+                });
                 
                 results.files[mappedType] = filePath;
                 this.logger.info(`✅ [STANDARD] Downloaded ${mappedType}: ${fileName}`);
@@ -239,12 +251,13 @@ class EnhancedRecordingDownloader extends EventEmitter {
     /**
      * Download a single file with retry capability
      */
-    async downloadFileWithRetry(downloadUrl, outputPath, maxRetries = 3) {
+    async downloadFileWithRetry(downloadUrl, outputPath, options = {}) {
+        const { maxRetries = 3, downloadToken = null, fileType = 'unknown' } = options;
         let lastError;
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                await this.downloadFile(downloadUrl, outputPath);
+                await this.downloadFile(downloadUrl, outputPath, { downloadToken, fileType });
                 return outputPath;
             } catch (error) {
                 lastError = error;
@@ -264,7 +277,9 @@ class EnhancedRecordingDownloader extends EventEmitter {
     /**
      * Download a single file with streaming and resume capability
      */
-    async downloadFileStreaming(downloadUrl, outputPath) {
+    async downloadFileStreaming(downloadUrl, outputPath, options = {}) {
+        const { downloadToken = null, fileType = 'unknown' } = options;
+        
         if (!downloadUrl || typeof downloadUrl !== 'string') {
             throw new Error('Invalid download URL');
         }
@@ -280,9 +295,11 @@ class EnhancedRecordingDownloader extends EventEmitter {
 
             // Use Zoom service's download method if available
             if (this.zoomService && this.zoomService.downloadFile) {
-                const data = await this.zoomService.downloadFile(downloadUrl, path.basename(outputPath));
+                const data = await this.zoomService.downloadFile(downloadUrl, downloadToken, fileType);
                 if (data) {
-                    await fs.promises.writeFile(outputPath, data);
+                    // If data has a buffer property, use that; otherwise use data directly
+                    const fileData = data.buffer || data;
+                    await fs.promises.writeFile(outputPath, fileData);
                     return outputPath;
                 }
             }
@@ -336,7 +353,9 @@ class EnhancedRecordingDownloader extends EventEmitter {
     /**
      * Download a single file from URL (original method preserved)
      */
-    async downloadFile(downloadUrl, outputPath) {
+    async downloadFile(downloadUrl, outputPath, options = {}) {
+        const { downloadToken = null, fileType = 'unknown' } = options;
+        
         if (!downloadUrl || typeof downloadUrl !== 'string') {
             throw new Error('Invalid download URL');
         }
@@ -344,9 +363,11 @@ class EnhancedRecordingDownloader extends EventEmitter {
         try {
             // Use Zoom service's download method if available
             if (this.zoomService && this.zoomService.downloadFile) {
-                const data = await this.zoomService.downloadFile(downloadUrl, path.basename(outputPath));
+                const data = await this.zoomService.downloadFile(downloadUrl, downloadToken, fileType);
                 if (data) {
-                    await fs.promises.writeFile(outputPath, data);
+                    // If data has a buffer property, use that; otherwise use data directly
+                    const fileData = data.buffer || data;
+                    await fs.promises.writeFile(outputPath, fileData);
                     return outputPath;
                 }
             }
