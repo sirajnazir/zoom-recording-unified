@@ -425,14 +425,17 @@ class ZoomService {
                 }
             };
             
-            // For non-webhook URLs, use Bearer token authentication
-            // For webhook URLs, only use Bearer if no access_token in URL
-            if (!isWebhookUrl || (!urlObj.searchParams.has('access_token') && !downloadToken)) {
+            // For webhook URLs, DO NOT use Bearer token - they use their own authentication
+            if (!isWebhookUrl) {
+                // Only non-webhook URLs need Bearer token
                 const token = await this.getZoomToken();
                 downloadOptions.headers['Authorization'] = `Bearer ${token}`;
                 this.logger.info('Using Bearer token for authentication');
             } else {
-                this.logger.info('Using webhook access_token for authentication');
+                // Webhook URLs should not have Bearer token
+                this.logger.info('Using webhook URL authentication (no Bearer token)');
+                // Remove any Authorization header that might have been set
+                delete downloadOptions.headers['Authorization'];
             }
             
             const response = await axios(downloadOptions);

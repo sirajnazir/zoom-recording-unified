@@ -1129,6 +1129,9 @@ class ProductionZoomProcessor {
         
         this.logger.info(`Processing recording: ${recordingId} (UUID: ${uuid})`);
         
+        // Initialize downloadedFiles outside try block so it's accessible in catch
+        let downloadedFiles = {};
+        
         try {
             const startTime = Date.now();
             
@@ -1149,7 +1152,6 @@ class ProductionZoomProcessor {
             
             // Step 1: Download recording files
             console.log('📥 Downloading recording files...');
-            let downloadedFiles = {};
             let transcriptContent = '';
             let chatContent = '';
             let folderPath = null;
