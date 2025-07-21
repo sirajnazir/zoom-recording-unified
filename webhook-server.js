@@ -45,6 +45,7 @@ console.log('================================================\n');
 const express = require('express');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
+const axios = require('axios');
 const { ProductionZoomProcessor } = require('./complete-production-processor');
 const { WebhookRecordingAdapter } = require('./src/infrastructure/services/WebhookRecordingAdapter');
 const { createContainer } = require('awilix');
@@ -128,6 +129,13 @@ app.post('/webhook-test', async (req, res) => {
             console.error('Error processing recording.completed:', error);
         });
     }
+    
+    // Process recording.transcript_completed events
+    if (event === 'recording.transcript_completed') {
+        processTranscriptCompleted(req.body).catch(error => {
+            console.error('Error processing recording.transcript_completed:', error);
+        });
+    }
 });
 
 // Webhook endpoint for recording.completed events
@@ -143,6 +151,13 @@ app.post('/webhook', validateWebhook, async (req, res) => {
     if (event === 'recording.completed') {
         processRecordingCompleted(req.body).catch(error => {
             console.error('Error processing recording.completed:', error);
+        });
+    }
+    
+    // Process recording.transcript_completed events
+    if (event === 'recording.transcript_completed') {
+        processTranscriptCompleted(req.body).catch(error => {
+            console.error('Error processing recording.transcript_completed:', error);
         });
     }
 });
@@ -198,6 +213,270 @@ async function logWebhookRecording(webhookData) {
         console.log(`📝 Webhook logged to: ${logFile}`);
     } catch (error) {
         console.error('Error logging webhook:', error);
+    }
+}
+
+// Process recording.transcript_completed event
+async function processTranscriptCompleted(webhookData) {
+    try {
+        const recording = webhookData.payload?.object;
+        if (!recording) {
+            console.error('No recording object in transcript webhook payload');
+            return;
+        }
+        
+        console.log('================================================================================');
+        console.log('📝 Processing Transcript Completed Webhook');
+        console.log(`📋 Meeting: ${recording.topic}`);
+        console.log(`🆔 Recording ID: ${recording.id}`);
+        console.log(`🔑 UUID: ${recording.uuid}`);
+        console.log(`📅 Date: ${recording.start_time}`);
+        console.log('================================================================================');
+        
+        // Log the webhook
+        await logWebhook(webhookData);
+        
+        // Initialize if needed
+        await initializeProcessor();
+        
+        // Find the transcript file in the recording files
+        const transcriptFile = recording.recording_files?.find(file => 
+            file.file_type === 'TRANSCRIPT' || 
+            file.file_extension === 'VTT' ||
+            file.recording_type === 'audio_transcript'
+        );
+        
+        if (!transcriptFile) {
+            console.error('❌ No transcript file found in webhook payload');
+            return;
+        }
+        
+        console.log(`📄 Transcript file found: ${transcriptFile.file_type} (${transcriptFile.file_size} bytes)`);
+        
+        // Download the transcript file
+        const uniqueIdentifier = `M:${recording.id}U:${recording.uuid}`;
+        const outputDir = path.join(process.env.OUTPUT_DIR || './output', uniqueIdentifier);
+        
+        try {
+            // Ensure output directory exists
+            await fs.mkdir(outputDir, { recursive: true });
+            
+            // Download transcript
+            const transcriptPath = path.join(outputDir, 'transcript.vtt');
+            console.log(`📥 Downloading transcript to: ${transcriptPath}`);
+            
+            // Use webhook adapter's download mechanism
+            const downloadUrl = transcriptFile.download_url;
+            const accessToken = webhookData.download_token;
+            
+            // Add access token to URL if needed
+            const urlObj = new URL(downloadUrl);
+            if (accessToken && !urlObj.searchParams.has('access_token')) {
+                urlObj.searchParams.set('access_token', accessToken);
+            }
+            
+            const axios = require('axios');
+            const response = await axios({
+                method: 'GET',
+                url: urlObj.toString(),
+                responseType: 'stream',
+                timeout: 60000, // 1 minute timeout
+                headers: {
+                    'User-Agent': 'zoom-recording-processor/1.0'
+                }
+            });
+            
+            const writer = require('fs').createWriteStream(transcriptPath);
+            response.data.pipe(writer);
+            
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
+            
+            console.log('✅ Transcript downloaded successfully');
+            
+            // Read the transcript content
+            const transcriptContent = await fs.readFile(transcriptPath, 'utf8');
+            console.log(`📝 Transcript content: ${transcriptContent.length} characters`);
+            
+            // Update existing recording with transcript and regenerate AI insights
+            await updateRecordingWithTranscript(recording, transcriptContent, transcriptPath);
+            
+        } catch (error) {
+            console.error('❌ Error downloading transcript:', error.message);
+            if (error.response) {
+                console.error(`   Status: ${error.response.status}`);
+                console.error(`   Headers:`, error.response.headers);
+            }
+        }
+        
+    } catch (error) {
+        console.error('Fatal error in processTranscriptCompleted:', error);
+    }
+}
+
+// Update existing recording with transcript data
+async function updateRecordingWithTranscript(recording, transcriptContent, transcriptPath) {
+    try {
+        console.log('\n🔄 Updating recording with transcript data...');
+        
+        // Get dependencies from container
+        const aiService = productionProcessor.container.resolve('aiService');
+        const sheetsService = productionProcessor.container.resolve('googleSheetsService');
+        const driveService = productionProcessor.container.resolve('driveService');
+        const logger = productionProcessor.logger;
+        
+        if (!aiService || !sheetsService) {
+            console.error('❌ Required services not available');
+            return;
+        }
+        
+        // Generate AI insights with transcript
+        console.log('🤖 Generating AI insights with transcript...');
+        const aiInsights = await aiService.generateAIInsights(transcriptContent, {
+            topic: recording.topic,
+            start_time: recording.start_time,
+            duration: Math.round((recording.duration || 0) / 60),
+            host_email: recording.host_email,
+            host_name: recording.host_name,
+            uuid: recording.uuid,
+            forceRuleBased: false
+        });
+        
+        console.log('✅ AI insights generated successfully');
+        
+        // Find the existing recording in Google Sheets to get folder info
+        const existingRow = await sheetsService.findRecordingByUUID(recording.uuid);
+        
+        if (!existingRow) {
+            console.error('❌ Recording not found in Google Sheets');
+            return;
+        }
+        
+        console.log('📊 Found existing recording in sheets');
+        
+        // Upload transcript to existing Drive folder
+        if (existingRow.drive_folder_id && driveService) {
+            try {
+                console.log(`📁 Uploading transcript to folder: ${existingRow.drive_folder_id}`);
+                const standardizedName = existingRow.standardized_name || `Recording_${recording.id}`;
+                const transcriptFileName = `${standardizedName}.vtt`;
+                
+                const uploadResult = await driveService.files.create({
+                    requestBody: {
+                        name: transcriptFileName,
+                        parents: [existingRow.drive_folder_id],
+                        mimeType: 'text/vtt'
+                    },
+                    media: {
+                        mimeType: 'text/vtt',
+                        body: require('fs').createReadStream(transcriptPath)
+                    }
+                });
+                
+                console.log(`✅ Transcript uploaded to Drive: ${uploadResult.data.id}`);
+                
+                // Update insights document if it exists
+                if (existingRow.insights_doc_id) {
+                    console.log('📄 Updating insights document...');
+                    // Generate insights document content
+                    let insightsContent = `# Session Insights: ${recording.topic}\n\n`;
+                    insightsContent += `**Date:** ${new Date(recording.start_time).toLocaleDateString()}\n`;
+                    insightsContent += `**Duration:** ${Math.round((recording.duration || 0) / 60)} minutes\n`;
+                    insightsContent += `**Coach:** ${existingRow.coach_name || 'Unknown'}\n`;
+                    insightsContent += `**Student:** ${existingRow.student_name || 'Unknown'}\n`;
+                    insightsContent += `**Week:** ${existingRow.week_number || 'Unknown'}\n\n`;
+                    
+                    // Add AI insights sections
+                    if (aiInsights.executiveSummary?.summary) {
+                        insightsContent += `## Executive Summary\n${aiInsights.executiveSummary.summary}\n\n`;
+                    }
+                    
+                    if (aiInsights.keyMomentsAnalysis?.keyMoments?.length > 0) {
+                        insightsContent += `## Key Moments\n`;
+                        aiInsights.keyMomentsAnalysis.keyMoments.forEach(moment => {
+                            insightsContent += `- ${moment.description || moment}\n`;
+                        });
+                        insightsContent += '\n';
+                    }
+                    
+                    if (aiInsights.actionItemsAnalysis?.items?.length > 0) {
+                        insightsContent += `## Action Items\n`;
+                        aiInsights.actionItemsAnalysis.items.forEach(item => {
+                            insightsContent += `- ${item.description || item}\n`;
+                        });
+                        insightsContent += '\n';
+                    }
+                    
+                    if (aiInsights.nextStepsAnalysis?.immediateActions?.length > 0) {
+                        insightsContent += `## Next Steps\n`;
+                        aiInsights.nextStepsAnalysis.immediateActions.forEach(step => {
+                            insightsContent += `- ${step}\n`;
+                        });
+                        insightsContent += '\n';
+                    }
+                    
+                    insightsContent += `\n---\n*Updated with transcript on ${new Date().toLocaleDateString()}*`;
+                    
+                    await driveService.files.update({
+                        fileId: existingRow.insights_doc_id,
+                        requestBody: {},
+                        media: {
+                            mimeType: 'text/markdown',
+                            body: insightsContent
+                        }
+                    });
+                    
+                    console.log('✅ Insights document updated');
+                }
+            } catch (error) {
+                console.error('⚠️ Error uploading to Drive:', error.message);
+            }
+        }
+        
+        // Update Google Sheets with transcript info and new insights
+        const updateData = {
+            uuid: recording.uuid,
+            has_transcript: true,
+            transcript_file_id: transcriptPath,
+            transcript_quality: 'Good',
+            
+            // Update AI insights fields
+            insights_version: '2.0-smart-transcript',
+            insights_generated: true,
+            
+            // Executive summary from AI
+            executive_summary: aiInsights.executiveSummary?.summary || '',
+            
+            // Key topics and themes
+            key_topics: aiInsights.thematicAnalysis?.keyThemes?.join(', ') || '',
+            discussion_themes: aiInsights.thematicAnalysis?.discussionTopics?.join(', ') || '',
+            
+            // Engagement metrics
+            engagement_score: aiInsights.engagementAnalysis?.overallScore || 0,
+            engagement_level: aiInsights.engagementAnalysis?.level || '',
+            
+            // Action items and next steps
+            action_items: aiInsights.actionItemsAnalysis?.items?.map(item => item.description).join('; ') || '',
+            next_steps: aiInsights.nextStepsAnalysis?.immediateActions?.join('; ') || '',
+            
+            // Progress and challenges
+            student_progress: aiInsights.progressAnalysis?.summary || '',
+            challenges_identified: aiInsights.challengesAnalysis?.mainChallenges?.join('; ') || '',
+            
+            // Updated timestamp
+            last_updated: new Date().toISOString(),
+            update_reason: 'Transcript completed and processed'
+        };
+        
+        console.log('📊 Updating Google Sheets with transcript data...');
+        await sheetsService.updateRecordingByUUID(recording.uuid, updateData);
+        
+        console.log('✅ Recording updated successfully with transcript and AI insights');
+        
+    } catch (error) {
+        console.error('❌ Error updating recording with transcript:', error);
     }
 }
 

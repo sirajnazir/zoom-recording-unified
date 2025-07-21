@@ -193,9 +193,12 @@ class RecordingCategorizer {
         const coachLower = (coach || '').toLowerCase();
         
         // Check if any MISC indicator is present
+        // Extract username from email for comparison (ignore domain)
+        const emailUsername = hostEmail.split('@')[0].toLowerCase();
+        
         const hasMiscIndicator = this.miscIndicators.some(indicator => 
             topic.includes(indicator) ||
-            hostEmail.includes(indicator) ||
+            emailUsername.includes(indicator) || // Check username part only, not domain
             hostName.includes(indicator) ||
             coachLower.includes(indicator)
         );

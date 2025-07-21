@@ -1237,6 +1237,209 @@ class MultiTabGoogleSheetsService {
             throw error;
         }
     }
+    
+    /**
+     * Find a recording by UUID across all standardized tabs
+     * @param {string} uuid - The recording UUID
+     * @returns {Promise<Object|null>} Recording data or null if not found
+     */
+    async findRecordingByUUID(uuid) {
+        try {
+            await this.ensureInitialized();
+            
+            // Check all standardized tabs
+            const standardizedTabs = ['webhookStandardized', 'zoomStandardized', 'driveStandardized'];
+            
+            for (const tabKey of standardizedTabs) {
+                const tab = this.tabs[tabKey];
+                if (!tab) continue;
+                
+                // Get all rows from the tab
+                const response = await this.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${tab.name}!A:BZ`
+                });
+                
+                const rows = response.data.values || [];
+                if (rows.length <= 1) continue; // No data rows
+                
+                const headers = rows[0];
+                const uuidIndex = headers.indexOf('uuid');
+                
+                if (uuidIndex === -1) {
+                    this.logger.warn(`UUID column not found in ${tab.name}`);
+                    continue;
+                }
+                
+                // Find the row with matching UUID
+                for (let i = 1; i < rows.length; i++) {
+                    if (rows[i][uuidIndex] === uuid) {
+                        // Convert row to object
+                        const rowData = {};
+                        headers.forEach((header, index) => {
+                            rowData[header] = rows[i][index] || '';
+                        });
+                        
+                        this.logger.info(`Found recording ${uuid} in ${tab.name}`);
+                        return {
+                            ...rowData,
+                            source_tab: tab.name,
+                            row_index: i + 1 // 1-based for Google Sheets
+                        };
+                    }
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            this.logger.error('Error finding recording by UUID:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * Update a recording by UUID in the appropriate standardized tab
+     * @param {string} uuid - The recording UUID
+     * @param {Object} updateData - Data to update
+     * @returns {Promise<boolean>} Success status
+     */
+    async updateRecordingByUUID(uuid, updateData) {
+        try {
+            await this.ensureInitialized();
+            
+            // Find which tab contains the recording
+            const existingRecord = await this.findRecordingByUUID(uuid);
+            if (!existingRecord) {
+                this.logger.error(`Recording with UUID ${uuid} not found in any tab`);
+                return false;
+            }
+            
+            const tabName = existingRecord.source_tab;
+            const rowIndex = existingRecord.row_index;
+            
+            // Get headers for the tab
+            const response = await this.sheets.spreadsheets.values.get({
+                spreadsheetId: this.spreadsheetId,
+                range: `${tabName}!1:1`
+            });
+            
+            const headers = response.data.values?.[0] || [];
+            
+            // Get the current row data
+            const rowResponse = await this.sheets.spreadsheets.values.get({
+                spreadsheetId: this.spreadsheetId,
+                range: `${tabName}!${rowIndex}:${rowIndex}`
+            });
+            
+            const currentRow = rowResponse.data.values?.[0] || [];
+            
+            // Update the row data with new values
+            const updatedRow = [...currentRow];
+            Object.keys(updateData).forEach(key => {
+                const colIndex = headers.indexOf(key);
+                if (colIndex !== -1) {
+                    updatedRow[colIndex] = updateData[key];
+                }
+            });
+            
+            // Update the sheet
+            await this.sheets.spreadsheets.values.update({
+                spreadsheetId: this.spreadsheetId,
+                range: `${tabName}!A${rowIndex}:BZ${rowIndex}`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: {
+                    values: [updatedRow]
+                }
+            });
+            
+            this.logger.info(`Updated recording ${uuid} in ${tabName} at row ${rowIndex}`);
+            return true;
+            
+        } catch (error) {
+            this.logger.error('Error updating recording by UUID:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Get recent recordings without transcripts
+     * @param {number} days - Number of days to look back
+     * @returns {Promise<Array>} Recordings without transcripts
+     */
+    async getRecentRecordingsWithoutTranscripts(days = 7) {
+        try {
+            await this.ensureInitialized();
+            
+            const recordings = [];
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - days);
+            
+            // Check all standardized tabs
+            const standardizedTabs = ['webhookStandardized', 'zoomStandardized', 'driveStandardized'];
+            
+            for (const tabKey of standardizedTabs) {
+                const tab = this.tabs[tabKey];
+                if (!tab) continue;
+                
+                // Get all rows from the tab
+                const response = await this.sheets.spreadsheets.values.get({
+                    spreadsheetId: this.spreadsheetId,
+                    range: `${tab.name}!A:BZ`
+                });
+                
+                const rows = response.data.values || [];
+                if (rows.length <= 1) continue;
+                
+                const headers = rows[0];
+                const indices = {
+                    uuid: headers.indexOf('uuid'),
+                    meeting_id: headers.indexOf('meeting_id'),
+                    topic: headers.indexOf('raw_name') !== -1 ? headers.indexOf('raw_name') : headers.indexOf('topic'),
+                    has_transcript: headers.indexOf('has_transcript'),
+                    start_time: headers.indexOf('start_time'),
+                    standardized_name: headers.indexOf('standardized_name'),
+                    drive_folder_id: headers.indexOf('drive_folder_id'),
+                    host_email: headers.indexOf('host_email'),
+                    host_name: headers.indexOf('host_name'),
+                    duration: headers.indexOf('duration'),
+                    transcript_retry_count: headers.indexOf('transcript_retry_count')
+                };
+                
+                // Filter recordings
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    
+                    // Check if recording is recent
+                    const startTime = row[indices.start_time];
+                    if (!startTime) continue;
+                    
+                    const recordingDate = new Date(startTime);
+                    if (recordingDate < cutoffDate) continue;
+                    
+                    // Check if transcript is missing
+                    const hasTranscript = row[indices.has_transcript];
+                    if (hasTranscript === 'true' || hasTranscript === 'True' || hasTranscript === true) continue;
+                    
+                    // Build recording object
+                    const recording = {};
+                    Object.entries(indices).forEach(([key, index]) => {
+                        if (index !== -1) {
+                            recording[key] = row[index] || '';
+                        }
+                    });
+                    
+                    recordings.push(recording);
+                }
+            }
+            
+            this.logger.info(`Found ${recordings.length} recordings without transcripts from the last ${days} days`);
+            return recordings;
+            
+        } catch (error) {
+            this.logger.error('Error getting recordings without transcripts:', error);
+            return [];
+        }
+    }
 }
 
 module.exports = MultiTabGoogleSheetsService;

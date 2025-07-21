@@ -1695,6 +1695,120 @@ class DualTabGoogleSheetsService {
             return uuid; // Return original if conversion fails
         }
     }
+    
+    /**
+     * Find a recording by UUID in the standardized tab
+     * @param {string} uuid - The recording UUID
+     * @returns {Promise<Object|null>} Recording data or null if not found
+     */
+    async findRecordingByUUID(uuid) {
+        try {
+            await this.ensureAuthentication();
+            
+            // Get all rows from standardized tab
+            const response = await this.sheets.spreadsheets.values.get({
+                spreadsheetId: this.config.sheets.spreadsheetId,
+                range: `${this.tabs.standardized}!A:BZ`
+            });
+            
+            const rows = response.data.values || [];
+            if (rows.length <= 1) return null; // No data rows
+            
+            const headers = rows[0];
+            const uuidIndex = headers.indexOf('uuid');
+            
+            if (uuidIndex === -1) {
+                this.logger.error('UUID column not found in standardized tab');
+                return null;
+            }
+            
+            // Find the row with matching UUID
+            for (let i = 1; i < rows.length; i++) {
+                if (rows[i][uuidIndex] === uuid) {
+                    // Convert row to object
+                    const rowData = {};
+                    headers.forEach((header, index) => {
+                        rowData[header] = rows[i][index] || '';
+                    });
+                    return rowData;
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            this.logger.error('Error finding recording by UUID:', error);
+            return null;
+        }
+    }
+    
+    /**
+     * Update a recording by UUID in the standardized tab
+     * @param {string} uuid - The recording UUID
+     * @param {Object} updateData - Data to update
+     * @returns {Promise<boolean>} Success status
+     */
+    async updateRecordingByUUID(uuid, updateData) {
+        try {
+            await this.ensureAuthentication();
+            
+            // Get all rows from standardized tab
+            const response = await this.sheets.spreadsheets.values.get({
+                spreadsheetId: this.config.sheets.spreadsheetId,
+                range: `${this.tabs.standardized}!A:BZ`
+            });
+            
+            const rows = response.data.values || [];
+            if (rows.length <= 1) return false; // No data rows
+            
+            const headers = rows[0];
+            const uuidIndex = headers.indexOf('uuid');
+            
+            if (uuidIndex === -1) {
+                this.logger.error('UUID column not found in standardized tab');
+                return false;
+            }
+            
+            // Find the row with matching UUID
+            let rowIndex = -1;
+            for (let i = 1; i < rows.length; i++) {
+                if (rows[i][uuidIndex] === uuid) {
+                    rowIndex = i;
+                    break;
+                }
+            }
+            
+            if (rowIndex === -1) {
+                this.logger.error(`Recording with UUID ${uuid} not found`);
+                return false;
+            }
+            
+            // Update the row data
+            const updatedRow = [...rows[rowIndex]];
+            Object.keys(updateData).forEach(key => {
+                const colIndex = headers.indexOf(key);
+                if (colIndex !== -1) {
+                    updatedRow[colIndex] = updateData[key];
+                }
+            });
+            
+            // Update the sheet
+            await this.sheets.spreadsheets.values.update({
+                spreadsheetId: this.config.sheets.spreadsheetId,
+                range: `${this.tabs.standardized}!A${rowIndex + 1}:BZ${rowIndex + 1}`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: {
+                    values: [updatedRow]
+                }
+            });
+            
+            this.logger.info(`Updated recording ${uuid} in standardized tab`);
+            return true;
+            
+        } catch (error) {
+            this.logger.error('Error updating recording by UUID:', error);
+            return false;
+        }
+    }
 }
 
 module.exports = { DualTabGoogleSheetsService };
