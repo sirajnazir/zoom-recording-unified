@@ -234,7 +234,7 @@ async function processTranscriptCompleted(webhookData) {
         console.log('================================================================================');
         
         // Log the webhook
-        await logWebhook(webhookData);
+        await logWebhookRecording(webhookData);
         
         // Initialize if needed
         await initializeProcessor();
