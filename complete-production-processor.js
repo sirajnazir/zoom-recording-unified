@@ -1648,6 +1648,11 @@ class ProductionZoomProcessor {
                 weekConfidence: weekAnalysis.confidence,
                 weekInferenceMethod: weekAnalysis.method,
                 
+                // ===== PRESERVE DATA SOURCE FOR CORRECT TAB ROUTING =====
+                dataSource: recording.dataSource || recording.source || 'zoom-api',
+                source: recording.dataSource || recording.source || 'zoom-api',
+                webhook_received_at: recording.webhook_received_at,
+                
                 // ===== CATEGORY DATA =====
                 category: recordingCategory,
                 categoryReason: recordingCategory === 'TRIVIAL' ? 'Low duration/participants/size' : 
