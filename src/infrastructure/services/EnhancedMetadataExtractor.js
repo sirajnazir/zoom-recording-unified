@@ -360,17 +360,19 @@ class EnhancedMetadataExtractor {
         // Check email against coach aliases
         for (const [coachName, aliases] of Object.entries(this.coachAliases)) {
             if (aliases.some(alias => hostEmail.includes(alias))) {
-                extraction.coach = coachName.charAt(0).toUpperCase() + coachName.slice(1);
-                extraction.confidence.coach = 100;
-                extraction.evidence.push(`Coach identified from host email: ${hostEmail}`);
-                extraction.dataSources.push('host_email');
-                extraction.processing.methods.push('host_email_match');
+                if (!extraction.coach || extraction.coach === 'Unknown' || extraction.confidence.coach < 100) {
+                    extraction.coach = coachName.charAt(0).toUpperCase() + coachName.slice(1);
+                    extraction.confidence.coach = 100;
+                    extraction.evidence.push(`Coach identified from host email: ${hostEmail}`);
+                    extraction.dataSources.push('host_email');
+                    extraction.processing.methods.push('host_email_match');
+                }
                 break;
             }
         }
 
         // If no email match, try name
-        if (!extraction.coach && hostName && this.nameStandardizer) {
+        if ((!extraction.coach || extraction.coach === 'Unknown') && hostName && this.nameStandardizer) {
             const standardized = await this.nameStandardizer.standardizeName(hostName);
             if (standardized.confidence > 80) {
                 extraction.coach = standardized.standardized;
@@ -412,36 +414,31 @@ class EnhancedMetadataExtractor {
                 const person1 = parts[0].trim();
                 const person2Parts = parts[1].trim().split(/\s+/);
                 const person2 = person2Parts[0]; // Get just the first word after 'and'
-                
                 // Manually resolve coach/student
                 const resolution = await this.resolveCoachStudent(person1, person2, extraction);
-                
-                if (resolution.student && !extraction.student) {
+                if (resolution.student && (!extraction.student || extraction.student === 'Unknown' || extraction.confidence.student < 70)) {
                     extraction.student = resolution.student;
                     extraction.confidence.student = 70; // Lower confidence for manual extraction
                     extraction.evidence.push(`Student "${extraction.student}" extracted from topic (manual)`);
                 }
-                
-                if (resolution.coach && !extraction.coach) {
+                if (resolution.coach && (!extraction.coach || extraction.coach === 'Unknown' || extraction.confidence.coach < 70)) {
                     extraction.coach = resolution.coach;
                     extraction.confidence.coach = 70;
                     extraction.evidence.push(`Coach "${extraction.coach}" extracted from topic (manual)`);
                 }
             }
         }
-
         // Check for Personal Meeting Room
         if (this.nameStandardizer && this.nameStandardizer.extractFromPersonalMeetingRoom) {
             const pmrResult = this.nameStandardizer.extractFromPersonalMeetingRoom(topic);
             if (pmrResult && pmrResult.coach) {
-                if (!extraction.coach || extraction.confidence.coach < pmrResult.confidence) {
+                if (!extraction.coach || extraction.coach === 'Unknown' || extraction.confidence.coach < pmrResult.confidence) {
                     extraction.coach = pmrResult.coach;
                     extraction.confidence.coach = pmrResult.confidence;
                     extraction.evidence.push('Coach identified from Personal Meeting Room');
                     extraction.processing.methods.push('personal_meeting_room');
                 }
-                
-                if (pmrResult.student && pmrResult.student !== 'Unknown') {
+                if (pmrResult.student && pmrResult.student !== 'Unknown' && (!extraction.student || extraction.student === 'Unknown' || extraction.confidence.student < (pmrResult.confidence - 10))) {
                     extraction.student = pmrResult.student;
                     extraction.confidence.student = pmrResult.confidence - 10; // Slightly lower confidence
                     extraction.evidence.push('Student inferred from Personal Meeting Room pattern');
@@ -479,7 +476,7 @@ class EnhancedMetadataExtractor {
                     name.toLowerCase().includes(alias)
                 )) {
                     isCoach = true;
-                    if (!extraction.coach || extraction.confidence.coach < 90) {
+                    if (!extraction.coach || extraction.coach === 'Unknown' || extraction.confidence.coach < 90) {
                         extraction.coach = coachName.charAt(0).toUpperCase() + coachName.slice(1);
                         extraction.confidence.coach = 90;
                         extraction.evidence.push(`Coach identified from participant: ${name}`);
@@ -495,10 +492,9 @@ class EnhancedMetadataExtractor {
         }
 
         // First non-coach participant is likely the student
-        if (nonCoachParticipants.length > 0 && !extraction.student && this.nameStandardizer) {
+        if (nonCoachParticipants.length > 0 && (!extraction.student || extraction.student === 'Unknown' || extraction.confidence.student < 85) && this.nameStandardizer) {
             const studentParticipant = nonCoachParticipants[0];
             const standardized = await this.nameStandardizer.standardizeName(studentParticipant.name);
-            
             if (standardized.standardized && standardized.standardized !== 'Unknown') {
                 extraction.student = standardized.standardized;
                 extraction.confidence.student = Math.min(85, standardized.confidence);
@@ -564,13 +560,13 @@ class EnhancedMetadataExtractor {
             // Try to determine who is coach and who is student
             const resolution = await this.resolveCoachStudent(person1, person2, extraction);
             
-            if (resolution.coach && (!extraction.coach || extraction.confidence.coach < pattern.confidence)) {
+            if (resolution.coach && (!extraction.coach || extraction.coach === 'Unknown' || extraction.confidence.coach < pattern.confidence)) {
                 extraction.coach = resolution.coach;
                 extraction.confidence.coach = pattern.confidence;
                 extraction.evidence.push(`Coach "${extraction.coach}" resolved from pattern: ${pattern.description}`);
             }
             
-            if (resolution.student && (!extraction.student || extraction.confidence.student < pattern.confidence)) {
+            if (resolution.student && (!extraction.student || extraction.student === 'Unknown' || extraction.confidence.student < pattern.confidence)) {
                 extraction.student = resolution.student;
                 extraction.confidence.student = pattern.confidence;
                 extraction.evidence.push(`Student "${extraction.student}" resolved from pattern: ${pattern.description}`);
@@ -582,7 +578,7 @@ class EnhancedMetadataExtractor {
             const coachName = match[fields.coach];
             const standardized = await this.nameStandardizer.standardizeName(coachName, 'coach');
             
-            if (!extraction.coach || extraction.confidence.coach < pattern.confidence) {
+            if ((!extraction.coach || extraction.coach === 'Unknown' || extraction.confidence.coach < pattern.confidence) && standardized.standardized && standardized.standardized !== 'Unknown') {
                 extraction.coach = standardized.standardized;
                 extraction.confidence.coach = Math.min(pattern.confidence, standardized.confidence);
                 extraction.evidence.push(`Coach "${extraction.coach}" from pattern: ${pattern.description}`);
@@ -594,7 +590,7 @@ class EnhancedMetadataExtractor {
             const studentName = match[fields.student];
             const standardized = await this.nameStandardizer.standardizeName(studentName, 'student');
             
-            if (!extraction.student || extraction.confidence.student < pattern.confidence) {
+            if ((!extraction.student || extraction.student === 'Unknown' || extraction.confidence.student < pattern.confidence) && standardized.standardized && standardized.standardized !== 'Unknown') {
                 extraction.student = standardized.standardized;
                 extraction.confidence.student = Math.min(pattern.confidence, standardized.confidence);
                 extraction.evidence.push(`Student "${extraction.student}" from pattern: ${pattern.description}`);
