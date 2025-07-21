@@ -86,18 +86,23 @@ node unified-processor.js sync
 5. **Google Sheets Update**
 
 ### Google Drive Structure
+For detailed information about the Google Drive folder structure and organization, see [Latest Documentation](docs/latest/README.md) or [Google Drive Folder Structure](docs/latest/GOOGLE_DRIVE_FOLDER_STRUCTURE.md).
+
+### Google Drive Structure
 ```
 Recordings Root/
-├── Coaches/
+├── Coaches/ (1fLA2s5KBgg0t0JHwoihjj35-wiwr8hJ8)
 │   ├── Jenny/
 │   ├── Aditi/
 │   └── ...
-├── Students/
+├── Students/ (12LgtSd9CpOllNBBycCfxPVFB6Sk9bTIp)
 │   ├── Aarav/
 │   ├── Kavya/
 │   └── ...
-├── MISC/
-└── TRIVIAL/
+├── MISC/ (1jMQ_gmwfUQv6gvGAXog3UrnXinUej0Qt)
+├── TRIVIAL/ (12oCxJ6xwJ5xDWo7H89nSh9OQJroTBhhH)
+├── Game Plan Reports/ (1Gxok38h6CAa0fw-zs8JFWoKSkzWlWEUG)
+└── Execution Docs/ (1ZElDyXLjHPW5kTkn2piUHmJ9n6iwYNkK)
 ```
 
 ### Google Sheet Structure
@@ -138,8 +143,12 @@ ZOOM_CLIENT_SECRET=your_client_secret
 
 # Google Drive
 RECORDINGS_ROOT_FOLDER_ID=your_root_folder_id
-COACHES_FOLDER_ID=your_coaches_folder_id
-STUDENTS_FOLDER_ID=your_students_folder_id
+COACHES_FOLDER_ID=1fLA2s5KBgg0t0JHwoihjj35-wiwr8hJ8
+STUDENTS_FOLDER_ID=12LgtSd9CpOllNBBycCfxPVFB6Sk9bTIp
+MISC_FOLDER_ID=1jMQ_gmwfUQv6gvGAXog3UrnXinUej0Qt
+TRIVIAL_FOLDER_ID=12oCxJ6xwJ5xDWo7H89nSh9OQJroTBhhH
+GAME_PLAN_REPORTS_FOLDER_ID=1Gxok38h6CAa0fw-zs8JFWoKSkzWlWEUG
+EXECUTION_DOCS_FOLDER_ID=1ZElDyXLjHPW5kTkn2piUHmJ9n6iwYNkK
 
 # Google Sheets
 MASTER_INDEX_SHEET_ID=your_sheet_id

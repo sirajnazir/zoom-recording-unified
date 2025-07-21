@@ -60,10 +60,13 @@ const config = {
         
         drive: {
             recordingsRootFolderId: process.env.RECORDINGS_ROOT_FOLDER_ID,
-            coachesFolderId: process.env.COACHES_FOLDER_ID,
-            studentsFolderId: process.env.STUDENTS_FOLDER_ID,
-            miscFolderId: process.env.MISC_FOLDER_ID,
-            trivialFolderId: process.env.TRIVIAL_FOLDER_ID
+            coachesFolderId: process.env.COACHES_FOLDER_ID || '1fLA2s5KBgg0t0JHwoihjj35-wiwr8hJ8',
+            studentsFolderId: process.env.STUDENTS_FOLDER_ID || '12LgtSd9CpOllNBBycCfxPVFB6Sk9bTIp',
+            miscFolderId: process.env.MISC_FOLDER_ID || '1jMQ_gmwfUQv6gvGAXog3UrnXinUej0Qt',
+            trivialFolderId: process.env.TRIVIAL_FOLDER_ID || '12oCxJ6xwJ5xDWo7H89nSh9OQJroTBhhH',
+            // Additional auxiliary folders
+            gamePlanReportsFolderId: process.env.GAME_PLAN_REPORTS_FOLDER_ID || '1Gxok38h6CAa0fw-zs8JFWoKSkzWlWEUG',
+            executionDocsFolderId: process.env.EXECUTION_DOCS_FOLDER_ID || '1ZElDyXLjHPW5kTkn2piUHmJ9n6iwYNkK'
         },
         
         sheets: {
